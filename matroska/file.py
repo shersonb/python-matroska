@@ -112,54 +112,18 @@ class MatroskaFile(ebml.document.EBMLDocument):
         self.segment.tracks.trackEntries.append(trackEntry)
         return trackEntry
 
-    #def _writeInfo(self):
-        #offset = self.segment.tell()
-
-        #if self._infoOffset is not None:
-            #self.segment.deleteChildElement(self._infoOffset)
-
-        #for seek in self.seekHead.seeks:
-            #if seek.seekID == self.info.prefix:
-                #seek.seekPosition = offset
-                #break
-
-        #else:
-            #self.seekHead.seeks.append(matroska.seekhead.Seek(self.info.prefix, offset))
-
-        #self._infoOffset = self.segment.writeChildElement(self.info)
-
-    #def _writeCluster(self):
-        #clusterOffset = self.segment.tell()
-
-        #with self.segment.lock:
-            #self.seek(192)
-            #self._writeInfo()
-            #self.seek(clusterOffset)
-
-            #self.segment.writeChildElement(self._currentCluster)
-            #self.segment.flush()
-
-        #inClusterOffset = 0
-
-        #for item in self.currentCluster.iterchildren():
-            #if item in blocksToIndex:
-                #cueTrackPositions = matroska.cues.CueTrackPositions(cueClusterPosition=clusterOffset,
-                                                                    #cueRelativePosition=inClusterOffset, cueTrack=block.trackNumber)
-
-                #cuePoint = matroska.cues.CuePoint(cueTime=block.pts, cueTrackPositionsList=[cueTrackPositions])
-                #self.cues.cuePoints.append(cuePoint)
-
-            #inClusterOffset += item.size()
-
-        #self._currentCluster = None
-        #self._currentBlocks.clear()
-        #self._blocksToIndex.clear()
-
     @property
     def mux(self):
         return self.segment.mux
 
+    @property
+    def demux(self):
+        return self.segment.iterPackets
 
     @property
     def segment(self):
         return self.body
+
+    @property
+    def tracks(self):
+        return self.segment.tracks
