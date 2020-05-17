@@ -1,6 +1,5 @@
 from ebml.base import EBMLInteger, EBMLData, EBMLString, EBMLMasterElement, EBMLFloat, EBMLList, EBMLProperty
-#from ebml.util import EBMLList, EBMLProperty, EBMLProperty
-#from ebml.util import ebmlproperty as ep
+import random
 
 class PrimaryRChromaticityX(EBMLFloat):
     ebmlID = b"\x55\xd1"
@@ -567,5 +566,38 @@ class Tracks(EBMLMasterElement):
 
         track = track.copy(parent=self)
         track.trackNumber = trackNumber
+        self.append(track)
+        return track
+
+    def new(self, codecID, *, pixelWidth=None, pixelHeight=None, samplingFrequency=None, channels=None):
+        trackNumber = 1
+        tracksByTrackNumber = self.byTrackNumber
+
+        existingUIDs = {track.trackUID for track in self}
+
+        while True:
+            trackUID = random.randint(1, 2**64-1)
+            if trackUID not in existingUIDs:
+                break
+
+        while trackNumber in tracksByTrackNumber:
+            trackNumber += 1
+
+        if codecID.upper().startswith("V_"):
+            video = Video(pixelWidth=pixelWidth)
+            audio = None
+            trackType = 1
+        elif codecID.upper().startswith("A_"):
+            audio = Audio(samplingFrequency=samplingFrequency, channels=channels)
+            video = None
+            trackType = 2
+        elif codecID.upper().startswith("S_"):
+            video = None
+            audio = None
+            trackType = 17
+
+        track = TrackEntry(trackNumber=trackNumber, trackUID=trackUID,
+                           trackType=trackType, codecID=codecID)
+
         self.append(track)
         return track
