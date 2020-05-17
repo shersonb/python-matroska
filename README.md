@@ -23,8 +23,9 @@ newtrack = g.tracks.clone(f.tracks.byTrackNumber[1])
 g.title = f.title
 
 for packet in f.demux(trackNumber=1):
+    packet = packet.copy()
     packet.trackNumber = newtrack.trackNumber
-    g.mux(packet.copy()) # remuxes track
+    g.mux(packet) # remuxes track
 
 f.close()
 g.close()
