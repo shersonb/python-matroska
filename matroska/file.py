@@ -9,10 +9,6 @@ class MatroskaFile(ebml.document.EBMLDocument):
         super(MatroskaFile, self).__init__(file, mode, bodycls=matroska.segment.Segment)
 
     def _init_read(self):
-        """
-        This should be overridden in subclasses if you are looking to handle specific document types.
-        """
-
         head = ebml.head.EBMLHead.fromFile(self._file)
 
         if head.docType != "matroska":
@@ -22,10 +18,6 @@ class MatroskaFile(ebml.document.EBMLDocument):
         self.body = self._bodycls(self._file)
 
     def _init_write(self):
-        """
-        This should be overridden in subclasses if you are looking to handle specific document types.
-        """
-
         head = ebml.head.EBMLHead(docType="matroska", docTypeReadVersion=2, docTypeVersion=4,
                                   ebmlMaxIDLength=4, ebmlMaxSizeLength=8, ebmlReadVersion=1, ebmlVersion=1)
 
@@ -63,3 +55,16 @@ class MatroskaFile(ebml.document.EBMLDocument):
     @property
     def tracks(self):
         return self.segment.tracks
+
+    @property
+    def tags(self):
+        return self.segment.tags
+
+    @property
+    def attachments(self):
+        return self.segment.attachments
+
+    @property
+    def chapters(self):
+        return self.segment.chapters
+

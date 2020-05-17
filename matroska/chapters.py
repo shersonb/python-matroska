@@ -6,7 +6,6 @@ class ChapterTrackNumber(EBMLInteger):
 
 class ChapterTrackNumbers(EBMLList):
     itemclass = ChapterTrackNumber
-    #attrname = "value"
 
 class ChapterTrack(EBMLMasterElement):
     ebmlID = b"\x8f"
@@ -164,6 +163,29 @@ class EditionEntry(EBMLMasterElement):
             EBMLProperty("editionFlagOrdered", EditionFlagOrdered, True),
             EBMLProperty("chapterAtoms", ChapterAtoms)
         )
+    @property
+    def append(self):
+        return self.chapterAtoms.append
+
+    @property
+    def insert(self):
+        return self.chapterAtoms.insert
+
+    @property
+    def remove(self):
+        return self.chapterAtoms.remove
+
+    @property
+    def extend(self):
+        return self.chapterAtoms.extend
+
+    @property
+    def __iter__(self):
+        return self.chapterAtoms.__iter__
+
+    @property
+    def __getitem__(self):
+        return self.chapterAtoms.__getitem__
 
 class EditionEntries(EBMLList):
     itemclass = EditionEntry
@@ -172,3 +194,27 @@ class EditionEntries(EBMLList):
 class Chapters(EBMLMasterElement):
     ebmlID = b"\x10\x43\xa7\x70"
     __ebmlchildren__ = (EBMLProperty("editionEntries", EditionEntries),)
+
+    @property
+    def append(self):
+        return self.editionEntries.append
+
+    @property
+    def insert(self):
+        return self.editionEntries.insert
+
+    @property
+    def remove(self):
+        return self.editionEntries.remove
+
+    @property
+    def extend(self):
+        return self.editionEntries.extend
+
+    @property
+    def __iter__(self):
+        return self.editionEntries.__iter__
+
+    @property
+    def __getitem__(self):
+        return self.editionEntries.__getitem__
