@@ -37,9 +37,8 @@ class Segment(ebml.document.EBMLBody):
     allowunknown = False
 
     def __init__(self, file, parent=None):
-        super(Segment, self).__init__(file, parent=parent)
-        self._clustersByTimestamp = {}
         self._clustersByOffset = {}
+        self._clustersByTimestamp = {}
         self._currentCluster = None
         self._currentBlocks = {}
         self._blocksToIndex = set()
@@ -48,6 +47,8 @@ class Segment(ebml.document.EBMLBody):
         self._trackPackets = {}
         self._trackBytes = {}
         self._trackDurations = {}
+        self._seekHead = None
+        super(Segment, self).__init__(file, parent=parent)
 
 
     def _init_read(self):
