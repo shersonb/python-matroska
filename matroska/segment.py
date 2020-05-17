@@ -127,6 +127,11 @@ class Segment(ebml.document.EBMLBody):
             self._clustersByOffset[offset] = child
             self._clustersByTimestamp[child.timestamp] = child
 
+        if isinstance(child, (matroska.info.Info, matroska.tracks.Tracks,
+                              matroska.attachments.Attachments, matroska.cues.Cues,
+                              matroska.tags.Tags, matroska.chapters.Chapters)):
+            self.seekHead[child] = offset
+
         return offset
 
     def deleteChildElement(self, offset):
@@ -155,7 +160,7 @@ class Segment(ebml.document.EBMLBody):
         while offset < self._contentssize:
             with self.lock:
                 self.seek(offset)
-                cluster = self.readCluster()
+                cluster = self.readChildElement()
                 offset = self.tell()
 
             if cluster is not None:

@@ -118,7 +118,7 @@ class SimpleBlock(EBMLElement):
     @property
     def trackEntry(self):
         if self.body is not None and self.body.tracks is not None:
-            return self.body.tracks.tracksByTrackNumber[self.trackNumber]
+            return self.body.tracks.byTrackNumber[self.trackNumber]
 
     @property
     def parent(self):
