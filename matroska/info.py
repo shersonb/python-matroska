@@ -1,6 +1,17 @@
 from ebml.base import EBMLInteger, EBMLData, EBMLString, EBMLMasterElement, EBMLFloat, EBMLDateTime, EBMLList, EBMLProperty
 #from ebml.util import EBMLList, EBMLProperty, EBMLProperty
 
+class UID(EBMLData):
+    data = EBMLProperty("data", bytes)
+    #__ebmlproperties__ = (data,)
+
+    @data.sethook
+    def data(self, value):
+        if isinstance(value, int):
+            value = value.to_bytes(16, "big")
+
+        return value
+
 class TimestampScale(EBMLInteger):
     ebmlID = b"\x2a\xd7\xb1"
 
@@ -10,19 +21,19 @@ class MuxingApp(EBMLString):
 class WritingApp(EBMLString):
     ebmlID = b"\x57\x41"
 
-class SegmentUID(EBMLData):
+class SegmentUID(UID):
     ebmlID = b"\x73\xa4"
 
 class SegmentFilename(EBMLString):
     ebmlID = b"\x73\x84"
 
-class PrevUID(EBMLData):
+class PrevUID(UID):
     ebmlID = b"\x3c\xb9\x23"
 
 class PrevFilename(EBMLString):
     ebmlID = b"\x3c\x83\xab"
 
-class NextUID(EBMLData):
+class NextUID(UID):
     ebmlID = b"\x3e\xb9\x23"
 
 class NextFilename(EBMLString):
@@ -33,7 +44,6 @@ class SegmentFamily(EBMLData):
 
 class SegmentFamilies(EBMLList):
     itemclass = SegmentFamily
-    attrname = "data"
 
 class ChapterTranslateEditionUID(EBMLInteger):
     ebmlID = b"\x69\xfc"
@@ -83,3 +93,4 @@ class Info(EBMLMasterElement):
             EBMLProperty("title", Title, True)
         )
 
+    
