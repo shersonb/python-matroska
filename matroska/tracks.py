@@ -513,33 +513,59 @@ class TrackEntry(EBMLMasterElement):
 class TrackEntries(EBMLList):
     itemclass = TrackEntry
 
-
 class Tracks(EBMLMasterElement):
     ebmlID = b"\x16\x54\xae\x6b"
     trackEntries = EBMLProperty("trackEntries", TrackEntries)
     __ebmlchildren__ = (trackEntries,)
 
     @property
-    def tracksByTrackNumber(self):
+    def append(self):
+        return self.trackEntries.append
+
+    @property
+    def insert(self):
+        return self.trackEntries.insert
+
+    @property
+    def remove(self):
+        return self.trackEntries.remove
+
+    @property
+    def extend(self):
+        return self.trackEntries.extend
+
+    @property
+    def __iter__(self):
+        return self.trackEntries.__iter__
+
+    @property
+    def __getitem__(self):
+        return self.trackEntries.__getitem__
+
+    @property
+    def byTrackNumber(self):
         return {track.trackNumber: track for track in self.trackEntries}
 
     @property
-    def videoTracks(self):
-        return [track for track in self.trackEntries if track.trackType == 1]
+    def video(self):
+        return tuple(track for track in self.trackEntries if track.trackType == 1)
 
     @property
-    def audioTracks(self):
-        return [track for track in self.trackEntries if track.trackType == 2]
+    def audio(self):
+        return tuple(track for track in self.trackEntries if track.trackType == 2)
 
     @property
-    def subtitleTracks(self):
-        return [track for track in self.trackEntries if track.trackType == 17]
+    def subtitles(self):
+        return tuple(track for track in self.trackEntries if track.trackType == 17)
 
-    #@trackEntries.sethook
-    #def trackEntries(self, tracks):
-        #self.tracksByTrackNumber = {track.trackNumber for track in tracks}
-        #self.videoTracks = [track for track in tracks if track.trackType == 0]
-        #self.audioTracks = [track for track in tracks if track.trackType == 1]
-        #self.subtitleTracks = [track for track in tracks if track.trackType == 17]
+    def clone(self, track):
+        trackNumber = 1
+        tracksByTrackNumber = self.byTrackNumber
 
-        #return tracks
+        while trackNumber in tracksByTrackNumber:
+            trackNumber += 1
+
+        track = track.copy(parent=self)
+        track.trackNumber = trackNumber
+        self.append(track)
+        return track
