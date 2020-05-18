@@ -37,7 +37,7 @@ class Cluster(EBMLMasterElement):
             EBMLProperty("blocks", Blocks)
         )
     __ebmlproperties__ = (
-            EBMLProperty("offsetInBody", int, optional=True),
+            EBMLProperty("offsetInSegment", int, optional=True),
             EBMLProperty("dataSize", int, optional=True)
         )
 
@@ -55,27 +55,92 @@ class Cluster(EBMLMasterElement):
             for block in self.blocks:
                 block.ancestorChanged()
 
-    def iterPackets(self, offset=0, trackNumber=None):
-        for block in self.iterBlocks(offset, trackNumber):
+    def iterPackets(self, start_pts=0, startPosition=0, trackNumber=None):
+        """
+        Create an iterator that yields packets contained in cluster.
+
+        'start_pts' (in seconds): Starts iteration at first packet whose presentation timestamp is ≥ start_pts
+        'startPosition' (in bytes): Starts demuxing at this offset inside cluster. Raises an exception if a child
+            element does NOT start at this offset.
+        'trackNumber': Filters by trackNumber. Can be either an integer or list/tuple of integers.
+        """
+
+        for block in self.iterBlocks(start_pts, startPosition=startPosition, trackNumber=trackNumber):
             for packet in block.iterPackets():
                 yield packet
 
-    def iterBlocks(self, offset=0, trackNumber=None):
+    def iterBlocks(self, start_pts=0, startPosition=0, trackNumber=None):
+        """
+        Create an iterator that yields blocks contained in cluster.
+
+        'start_pts' (in seconds): Starts iteration at first block whose presentation timestamp is ≥ start_pts
+        'startPosition' (in bytes): Starts demuxing at this offset inside cluster. Raises an exception if a child
+            element does NOT start at this offset.
+        'trackNumber': Filters by trackNumber. Can be either an integer or list/tuple of integers.
+        """
+
         if hasattr(self, "_blocks"):
             for block in self.blocks:
-                if trackNumber is None or block.trackNumber == trackNumber:
+                if block.pts*self.body.info.timestampScale >= start_pts*10**9:
+                    break
+
+            if trackNumber is None:
+                yield block
+            elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
+                yield block
+            elif block.trackNumber == trackNumber:
+                yield block
+
+            for block in self.blocks:
+                if trackNumber is None:
                     yield block
+                elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
+                    yield block
+                elif block.trackNumber == trackNumber:
+                    yield block
+
         else:
-            offset = max(offset, 0)
+            offset = max(startPosition, 0)
 
             while offset < self.dataSize:
                 with self.body.lock:
-                    self.body.seek(self.offsetInBody + offset)
-                    child = self.body.readElement((matroska.blocks.SimpleBlock, matroska.blocks.BlockGroup), parent=self)
-                    offset = self.body.tell() - self.offsetInBody
+                    self.body.seek(self.offsetInSegment + offset)
+                    block = self.body.readElement(self._childTypes, parent=self)
 
-                if child is not None and (trackNumber is None or child.trackNumber == trackNumber):
-                    yield child
+                    if block is None:
+                        raise ReadError("")
+
+                    offset = self.body.tell() - self.offsetInSegment
+
+                if isinstance(block, (matroska.blocks.SimpleBlock, matroska.blocks.BlockGroup)) \
+                            and block.pts*self.body.info.timestampScale >= start_pts*10**9:
+                    if trackNumber is None:
+                        break
+
+                    elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
+                        break
+
+                    elif block.trackNumber == trackNumber:
+                        break
+
+            yield block
+
+            while offset < self.dataSize:
+                with self.body.lock:
+                    self.body.seek(self.offsetInSegment + offset)
+                    block = self.body.readElement((matroska.blocks.SimpleBlock, matroska.blocks.BlockGroup), parent=self)
+
+                    offset = self.body.tell() - self.offsetInSegment
+
+                if block is not None:
+                    if trackNumber is None:
+                        yield block
+
+                    elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
+                        yield block
+
+                    elif block.trackNumber == trackNumber:
+                        yield block
 
     @classmethod
     def _fromFile(cls, file, size, ebmlID=None, parent=None):
@@ -84,11 +149,12 @@ class Cluster(EBMLMasterElement):
             self._parent = parent
 
             with parent.lock:
-                self.offsetInBody = parent.tell()
+                self.offsetInSegment = parent.tell()
                 offset = 0
 
                 for k in range(8):
-                    child = parent.readElement((Timestamp, SilentTracks, Position, PrevSize), parent=self)
+                    child = parent.readElement((Timestamp, SilentTracks, Position, PrevSize), parent=self,
+                                               ignore=(matroska.blocks.BlockGroup.ebmlID, matroska.blocks.SimpleBlock.ebmlID))
 
                     if child is None:
                         break
@@ -96,7 +162,7 @@ class Cluster(EBMLMasterElement):
                     prop = self.__ebmlpropertiesbyid__[child.ebmlID]
                     prop.__set__(self, child)
 
-            parent.seek(self.offsetInBody + size)
+            parent.seek(self.offsetInSegment + size)
             self.dataSize = size
             return self
         else:

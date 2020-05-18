@@ -176,6 +176,10 @@ class AttachedFile(EBMLMasterElement):
         return self
 
     def save(self, path, noclobber=False):
+        """
+        Saves attachment. If 'path' is a directory, then filename from
+        'self.fileName' will be appended to 'path'.
+        """
         if os.path.isdir(path):
             path = os.path.join(path, self.fileName)
 
@@ -215,6 +219,9 @@ class Attachments(EBMLMasterElement):
         return self.attachedFiles.extend
 
     def addFile(self, path, mimeType=None, description=None):
+        """
+        Adds an attachment from a file, detecting its mimetype automatically if 'mimeType' is not specified.
+        """
         attachedFile = AttachedFile.fromPath(path, mimeType=mimeType, description=description, parent=self)
         self.append(attachedFile)
         return attachedFile

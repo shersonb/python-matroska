@@ -17,7 +17,7 @@ import random
 import threading
 import time
 
-__all__ = ["SegmentReader"]
+__all__ = ["Segment"]
 
 class Segment(ebml.document.EBMLBody):
     ebmlID = b"\x18\x53\x80\x67"
@@ -92,6 +92,10 @@ class Segment(ebml.document.EBMLBody):
         super(Segment, self)._init_write()
 
     def findCue(self, start_pts=0, trackNumber=None):
+        """
+        Attempts to find CuePoint element.
+        """
+
         if self.cues is None:
             return
 
@@ -115,10 +119,15 @@ class Segment(ebml.document.EBMLBody):
         child = super().readChildElement()
 
         if isinstance(child, matroska.cluster.Cluster):
-            self._clustersByOffset[child.offsetInBody] = child
+            self._clustersByOffset[child.offsetInSegment] = child
             self._clustersByTimestamp[child.timestamp] = child
 
         return child
+
+    def readCluster(self):
+        childTypes = list(self._childTypes.keys())
+        childTypes.remove(matroska.cluster.Cluster.ebmlID)
+        return self.readElement(matroska.cluster.Cluster, parent=self, ignore=childTypes)
 
     def writeChildElement(self, child):
         offset = super().writeChildElement(child)
@@ -143,57 +152,62 @@ class Segment(ebml.document.EBMLBody):
 
         return offset
 
-    def iterClusters(self, start_pts=0, trackNumber=None):
-        cuePoint = self.findCue(start_pts, trackNumber)
-        if cuePoint is not None:
-            for cueTrackPosition in cuePoint.cueTrackPositionsList:
-                if trackNumber is None or cueTrackPosition.cueTrack == trackNumber:
-                    break
+    def iterClusters(self, start_pts=0, startClusterPosition=None, trackNumber=None):
+        if startClusterPosition is None:
+            cuePoint = self.findCue(start_pts, trackNumber)
 
-            offset = cueTrackPosition.cueClusterPosition
+            if cuePoint is not None:
+                for cueTrackPosition in cuePoint.cueTrackPositionsList:
+                    if trackNumber is None or cueTrackPosition.cueTrack == trackNumber:
+                        break
+
+                offset = cueTrackPosition.cueClusterPosition
+
+            else:
+                offset = 0
 
         else:
-            offset = 0
+            offset = startClusterPosition
 
         cutoff = 10**9*start_pts/self.info.timestampScale - 32768
 
         while offset < self._contentssize:
             with self.lock:
                 self.seek(offset)
-                cluster = self.readChildElement()
+                cluster = self.readCluster()
                 offset = self.tell()
 
-            if cluster is not None:
+            if cluster:
                 if cluster.timestamp < cutoff:
                     continue
 
                 yield cluster
 
-    def iterPackets(self, start_pts=0, trackNumber=None):
-        I = self.iterClusters(start_pts, trackNumber)
+    def iterPackets(self, start_pts=0, startClusterPosition=None, startBlockPosition=0, trackNumber=None):
+        """
+        Create an iterator that yields packets contained in segment.
 
-        for cluster in I:
-            J = cluster.iterPackets(trackNumber=trackNumber)
+        'start_pts' (in seconds): Starts iteration at first packet whose presentation timestamp is ≥ start_pts
+        'startClusterPosition' (in bytes): Starts demuxing from cluster at this position. Raises an exception if a child
+            element does NOT start at this offset.
+        'startBlockPosition' (in bytes): Starts demuxing at this offset inside the first cluster. Raises an exception if a child
+            element does NOT start at this offset.
+        'trackNumber': Filters by trackNumber. Can be either an integer or list/tuple of integers.
 
-            for packet in J:
-                if packet.pts >= 10**9*start_pts:
-                    break
+        Both 'startClusterPosition' and 'startBlockPosition' are values that can be looked up in the Cues element
+        (from the CueClusterPosition and CueRelativePosition elements). See 'self.findCue'.
+        """
+
+        clusters = self.iterClusters(start_pts, startClusterPosition=startClusterPosition, trackNumber=trackNumber)
+
+        for k, cluster in enumerate(clusters):
+            if k == 0:
+                packets = cluster.iterPackets(start_pts=start_pts, startPosition=startBlockPosition, trackNumber=trackNumber)
 
             else:
-                continue
+                packets = cluster.iterPackets(start_pts=start_pts, trackNumber=trackNumber)
 
-            break
-
-        if packet is not None:
-            yield packet
-
-        for packet in J:
-            yield packet
-
-        for cluster in I:
-            J = cluster.iterPackets(trackNumber=trackNumber)
-
-            for packet in J:
+            for packet in packets:
                 yield packet
 
     def writeTopLevel(self, element):
@@ -230,6 +244,11 @@ class Segment(ebml.document.EBMLBody):
         self._blocksToIndex.clear()
 
     def mux(self, packet):
+        """
+        Writes a packet to file. Automatically handles creation of Cluster, SimpleBlock, BlockGroup+Block
+        elements.
+        """
+
         trackEntry = self.tracks.tracksByTrackNumber[packet.trackNumber]
         timestampScale = self.info.timestampScale
         isVideoKeyframe = trackEntry.video is not None and packet.keyframe

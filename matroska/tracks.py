@@ -558,6 +558,10 @@ class Tracks(EBMLMasterElement):
         return tuple(track for track in self.trackEntries if track.trackType == 17)
 
     def clone(self, track):
+        """
+        Clones an existing track from another file. Useful for remuxing. Returns cloned track.
+        """
+
         trackNumber = 1
         tracksByTrackNumber = self.byTrackNumber
 
@@ -570,6 +574,14 @@ class Tracks(EBMLMasterElement):
         return track
 
     def new(self, codecID, *, pixelWidth=None, pixelHeight=None, samplingFrequency=None, channels=None):
+        """
+        Creates a new track, appends to self, and returns said new track.
+
+        Must specify 'pixelWidth' and 'pixelHeight' if 'codecID' starts with "V_" (i.e., codec is video).
+        Must specify 'samplingFrequency' and 'channels' if 'codecID' starts with "A_" (i.e., codec is audio).
+
+        See https://www.matroska.org/technical/specs/codecid/index.html for a current list of supported values.
+        """
         trackNumber = 1
         tracksByTrackNumber = self.byTrackNumber
 
