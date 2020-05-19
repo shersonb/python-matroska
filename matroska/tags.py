@@ -83,6 +83,9 @@ class SimpleTag(EBMLMasterElement):
 class SimpleTags(EBMLList):
     itemclass = SimpleTag
 
+SimpleTag.__ebmlchildren__ += (EBMLProperty("simpleTags", SimpleTags, optional=True),)
+SimpleTag._prepare()
+SimpleTag._generate__init__()
 
 class Tag(EBMLMasterElement):
     ebmlID = b"\x73\x73"
@@ -98,3 +101,86 @@ class TagList(EBMLList):
 class Tags(EBMLMasterElement):
     ebmlID = b"\x12\x54\xc3\x67"
     __ebmlchildren__ = (EBMLProperty("tagList", TagList),)
+
+    @property
+    def append(self):
+        return self.tagList.append
+
+    @property
+    def insert(self):
+        return self.tagList.insert
+
+    @property
+    def remove(self):
+        return self.tagList.remove
+
+    @property
+    def extend(self):
+        return self.tagList.extend
+
+    @property
+    def __iter__(self):
+        return self.tagList.__iter__
+
+    @property
+    def __getitem__(self):
+        return self.tagList.__getitem__
+
+    def addMovieTag(self, title, director=None, dateReleased=None, comment=None):
+        targets = Targets(targetTypeValue=50, targetType="MOVIE")
+        simpleTags = [SimpleTag(tagName="TITLE", tagString=title)]
+
+        if director is not None:
+            simpleTags.append(SimpleTag(tagname="DIRECTOR", tagString=director))
+
+        if dateReleased is not None:
+            simpleTags.append(SimpleTag(tagname="DATE_RELEASED", tagString=dateReleased))
+
+        if comment is not None:
+            simpleTags.append(SimpleTag(tagname="COMMENT", tagString=comment))
+
+        tag = Tag(targets, simpleTags)
+        self.append(tag)
+        return tag
+
+    def addCollectionTag(self, title):
+        targets = Targets(targetTypeValue=70, targetType="COLLECTION")
+        simpleTags = [SimpleTag(tagName="TITLE", tagString=title)]
+
+        tag = Tag(targets, simpleTags)
+        self.append(tag)
+        return tag
+
+    def addSeasonTag(self, seasonNumber, dateReleased=None, numberOfEpisodes=None):
+        targets = Targets(targetTypeValue=60, targetType="SEASON")
+        simpleTags = [SimpleTag(tagName="PART_NUMBER", tagString=seasonNumber)]
+
+        if dateReleased:
+            simpleTags.append(SimpleTag(tagName="DATE_RELEASED", tagString=dateReleased))
+
+        if numberOfEpisodes:
+            simpleTags.append(SimpleTag(tagName="TOTAL_PARTS", tagString=numberOfEpisodes))
+
+        tag = Tag(targets, simpleTags)
+        self.append(tag)
+        return tag
+
+    def addEpisodeTag(self, title, part=None):
+        targets = Targets(targetTypeValue=50, targetType="EPISODE")
+        simpleTags = [SimpleTag(tagName="TITLE", tagString=title)]
+
+        if part is not None:
+            simpleTags.append(SimpleTag(tagName="PART_NUMBER", tagString=part))
+
+        tag = Tag(targets, simpleTags)
+        self.append(tag)
+        return tag
+
+    def addChapterTag(self, chapterUID, title):
+        targets = Targets(chapterUID=chapterUID, targetTypeValue=30, targetType="CHAPTER")
+        simpleTags = [SimpleTag(tagName="TITLE", tagString=title)]
+
+        tag = Tag(targets, simpleTags)
+        self.append(tag)
+        return tag
+
