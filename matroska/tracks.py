@@ -471,7 +471,7 @@ class TrackEntry(EBMLMasterElement):
             EBMLProperty("trackOperation", TrackOperation, optional=True),
             EBMLProperty("contentEncodings", ContentEncodings, optional=True)
         )
-    __ebmlproperties__ = (EBMLProperty("maxInLace", int, optional=True),)
+    __ebmladdproperties__ = (EBMLProperty("maxInLace", int, optional=True),)
 
     @property
     def compression(self):

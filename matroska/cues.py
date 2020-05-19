@@ -135,7 +135,7 @@ class CuePoint(CueMasterElement):
             EBMLProperty("cueTrackPositionsList", CueTrackPositionsList),
         )
 
-    __ebmlproperties__ = (
+    __ebmladdproperties__ = (
             EBMLProperty("data", bytes, optional=True),
         )
 
