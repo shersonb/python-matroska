@@ -10,8 +10,12 @@ class Packet(object):
     pts = EBMLProperty("pts", int, optional=True)
     duration = EBMLProperty("duration", int, optional=True)
     keyframe = EBMLProperty("keyframe", bool, optional=True)
-
     readonly = EBMLElement.readonly
+
+    @property
+    def trackEntry(self):
+        if self.parent:
+            return self.parent.trackEntry
 
     @property
     def zdata(self):
@@ -77,7 +81,7 @@ class Packet(object):
     def cluster(self):
         return self.parent.cluster
 
-    def copy(self):
+    def copy(self, parent=None):
         return type(self)(
             trackNumber=self.trackNumber,
             data=self.data,
@@ -85,7 +89,8 @@ class Packet(object):
             compression=self.compression,
             pts=self.pts,
             duration=self.duration,
-            keyframe=self.keyframe
+            keyframe=self.keyframe,
+            parent=parent
             )
 
 class Packets(EBMLList):
@@ -326,7 +331,7 @@ class SimpleBlock(EBMLElement):
         self.lacing = lacing = (flags & 0b00000110) >> 1
 
         data = data[3:]
-        self.packets = Packets([])
+        self.packets = Packets([], parent=self)
 
         if lacing == 0b10:
             sizes, data = self.decodeFixedSizeLacing(data)
@@ -350,7 +355,6 @@ class SimpleBlock(EBMLElement):
 
         for k, chunk in enumerate(chunks):
             if self.trackEntry is not None and self.trackEntry.defaultDuration is not None and self.pktduration is not None:
-                #print(self.trackEntry.trackNumber, type(self), self.pts, self.body.info.timestampScale, self.pktduration)
                 pts = self.pts*self.body.info.timestampScale + k*self.pktduration
 
             else:
@@ -367,7 +371,6 @@ class SimpleBlock(EBMLElement):
             pkt.readonly = True
             self.packets.append(pkt)
 
-        #self.__init__(trackNumber, localpts, packets, lacing, keyframe, invisible, discardable, parent=parent)
         return self
 
     @staticmethod
@@ -544,7 +547,7 @@ class BlockGroup(EBMLMasterElement):
 
     def iterPackets(self):
         for packet in self.block.iterPackets():
-            packet = packet.copy()
+            packet = packet.copy(parent=self.block)
 
             if self.blockDuration is not None and self.segment.info.timestampScale is not None:
                 packet.duration = self.blockDuration*self.segment.info.timestampScale
