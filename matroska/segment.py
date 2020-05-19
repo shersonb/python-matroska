@@ -16,6 +16,7 @@ import sys
 import random
 import threading
 import time
+import gc
 
 __all__ = ["Segment"]
 
@@ -39,10 +40,10 @@ class Segment(ebml.document.EBMLBody):
     def __init__(self, file, parent=None):
         self._clustersByOffset = {}
         self._clustersByTimestamp = {}
+        self._lastClusterEnd = None
         self._currentCluster = None
         self._currentBlocks = {}
         self._blocksToIndex = set()
-        self._infoOffset = None
         self._packetsMuxed = 0
         self._trackPackets = {}
         self._trackBytes = {}
@@ -50,6 +51,25 @@ class Segment(ebml.document.EBMLBody):
         self._seekHead = None
         super(Segment, self).__init__(file, parent=parent)
 
+    @property
+    def infoOffset(self):
+        for seek in self.seekHead.seeks:
+            if seek.seekID == self.info.ebmlID:
+                return seek.seekPosition
+
+    @property
+    def chaptersOffset(self):
+        if self.chapters:
+            for seek in self.seekHead.seeks:
+                if seek.seekID == self.chapters.ebmlID:
+                    return seek.seekPosition
+
+    @property
+    def attachmentsOffset(self):
+        if self.attachments:
+            for seek in self.seekHead.seeks:
+                if seek.seekID == self.attachments.ebmlID:
+                    return seek.seekPosition
 
     def _init_read(self):
         super(Segment, self)._init_read()
@@ -115,6 +135,15 @@ class Segment(ebml.document.EBMLBody):
 
         return cuePoint
 
+    def readbytes(self, offset, size):
+        with self.lock:
+            current = self.tell()
+            self.seek(offset)
+            data = self._file.read(size)
+            self.seek(current)
+
+        return data
+
     def readChildElement(self):
         child = super().readChildElement()
 
@@ -139,16 +168,35 @@ class Segment(ebml.document.EBMLBody):
         if isinstance(child, (matroska.info.Info, matroska.tracks.Tracks,
                               matroska.attachments.Attachments, matroska.cues.Cues,
                               matroska.tags.Tags, matroska.chapters.Chapters)):
-            self.seekHead[child] = offset
+            for seek in list.copy(self.seekHead.seeks):
+                if seek.seekID == child.ebmlID:
+                    seek.seekPosition = offset
+                    break
+
+            else:
+                self.seekHead.seeks.append(
+                    matroska.seekhead.Seek(seekID=child.ebmlID, seekPosition=offset))
 
         return offset
 
     def deleteChildElement(self, offset):
         offset = super().deleteChildElement(offset)
 
-        if offset in self.clustersByOffset:
+        if offset in self._clustersByOffset:
             cluster = self._clustersByOffset.pop(offset)
             del self._clustersByTimestamp[cluster.timestamp]
+
+            for cuePoint in list.copy(self.cues.cuePoints):
+                for cueTrackPositions in list.copy(cuePoint.cueTrackPositionsList):
+                    if cueTrackPositions.cueClusterPosition == offset:
+                        cuePoint.cueTrackPositionsList.remove(cueTrackPositions)
+
+                if len(cuePoint.cueTrackPositionsList) == 0:
+                    self.cues.cuePoints.remove(cuePoint)
+
+        for seek in list.copy(self.seekHead.seeks):
+            if seek.seekPosition == offset:
+                self.seekHead.seeks.remove(seek)
 
         return offset
 
@@ -210,20 +258,19 @@ class Segment(ebml.document.EBMLBody):
             for packet in packets:
                 yield packet
 
-    def writeTopLevel(self, element):
-        if element in self.seekHead:
-            self.deleteChildElement(self.seekHead[element])
-
-        self.seekHead[element] = self.writeChildElement(element)
-
     def writeCluster(self):
-        clusterOffset = self.tell()
+        clusterOffset = self._lastClusterEnd or self.tell()
 
         with self.lock:
-            self.seek(192)
-            self.writeTopLevel(self.info.copy())
-            self.seek(clusterOffset)
+            n = self.infoOffset
 
+            if n in self._knownChildren:
+                self.deleteChildElement(n)
+
+            self.seek(n)
+            self.writeChildElement(self.info.copy())
+            self.seek(clusterOffset)
+            self._lastClusterEnd = clusterOffset + self._currentCluster.size()
             self.writeChildElement(self._currentCluster)
             self.flush()
 
@@ -242,6 +289,34 @@ class Segment(ebml.document.EBMLBody):
         self._currentCluster = None
         self._currentBlocks.clear()
         self._blocksToIndex.clear()
+        gc.collect()
+
+    def _newBlockGroup(self, trackNumber):
+        pass
+
+    def _init_mux(self):
+        self.seek(128)
+        self.writeChildElement(self.info.copy())
+        self.seek(128, 1)
+        self.writeChildElement(self.tracks)
+
+        if len(self.chapters.editionEntries):
+            self.writeChildElement(self.chapters)
+
+        elif not self.chapters.readonly:
+            self.chapters.readonly = True
+
+        if len(self.attachments.attachedFiles):
+            self.writeChildElement(self.attachments)
+
+        elif not self.attachments.readonly:
+            self.attachments.readonly = True
+
+        self.flush()
+
+        self._trackPackets = {track.trackNumber: 0 for track in self.tracks.trackEntries}
+        self._trackBytes = {track.trackNumber: 0 for track in self.tracks.trackEntries}
+        self._trackDurations = {track.trackNumber: 0 for track in self.tracks.trackEntries}
 
     def mux(self, packet):
         """
@@ -249,7 +324,10 @@ class Segment(ebml.document.EBMLBody):
         elements.
         """
 
-        trackEntry = self.tracks.tracksByTrackNumber[packet.trackNumber]
+        trackEntry = self.tracks.byTrackNumber[packet.trackNumber]
+        packet.compression = trackEntry.compression
+        isDefaultDuration = packet.duration is None or (trackEntry.defaultDuration is not None and abs(trackEntry.defaultDuration - packet.duration) <= 2)
+        maxInLace = trackEntry.maxInLace if trackEntry.maxInLace is not None else 8
         timestampScale = self.info.timestampScale
         isVideoKeyframe = trackEntry.video is not None and packet.keyframe
         isSubtitle = trackEntry.trackType == 17
@@ -260,44 +338,16 @@ class Segment(ebml.document.EBMLBody):
         newClusterNeeded = nonemptyCluster and (isVideoKeyframe or ptsOverflow)
 
         if self._packetsMuxed == 0:
-            self.seek(128)
-            self.writeTopLevel(self.info.copy())
-            self.seek(128, 1)
-            self.writeTopLevel(self.tracks)
-
-            if len(self.chapters.editionEntries):
-                self.writeTopLevel(self.chapters)
-
-            elif not self.chapters.readonly:
-                self.chapters.readonly = True
-
-            if len(self.attachments.attachedFiles):
-                self.writeTopLevel(self.attachments)
-
-            elif not self.attachments.readonly:
-                self.attachments.readonly = True
-
-            self.flush()
-
-            self._trackPackets = {track.trackNumber: 0 for track in self.tracks.trackEntries}
-            self._trackBytes = {track.trackNumber: 0 for track in self.tracks.trackEntries}
-            self._trackDurations = {track.trackNumber: 0 for track in self.tracks.trackEntries}
-
+            self._init_mux()
             self._currentCluster = matroska.cluster.Cluster(timestamp=int(packet.pts/timestampScale),
-                                                            blocks=[], parent=self)
+                                                        blocks=[], parent=self)
 
         if newClusterNeeded:
             self.writeCluster()
             self._currentCluster = matroska.cluster.Cluster(timestamp=int(packet.pts/timestampScale),
                                                             blocks=[], parent=self)
 
-        packet.compression = trackEntry.compression
-
         localpts = int(packet.pts/timestampScale - self._currentCluster.timestamp)
-
-        isDefaultDuration = packet.duration is None or (trackEntry.defaultDuration is not None and abs(trackEntry.defaultDuration - packet.duration) <= 2)
-
-        maxInLace = trackEntry.maxInLace if trackEntry.maxInLace is not None else 8
 
         if not isDefaultDuration:
             """Use BlockGroup/Block"""
@@ -399,9 +449,9 @@ class Segment(ebml.document.EBMLBody):
             if self._currentCluster is not None:
                 self.writeCluster()
 
-            self.writeTopLevel(self.cues)
+            self.writeChildElement(self.cues)
             self.makeStatsTags()
-            self.writeTopLevel(self.tags)
+            self.writeChildElement(self.tags)
 
             segmentSize = self.tell()
             self.seek(0)
