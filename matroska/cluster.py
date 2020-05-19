@@ -1,5 +1,7 @@
 from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList
 import matroska.blocks
+import threading
+import gc
 
 __all__ = ["Cluster", "Clusters", "ClusterPointer", "Timestamp", "Position", "PrevSize", "SilentTrackNumber", "SilentTrackNumbers", "SilentTracks", "Blocks"]
 
@@ -27,6 +29,9 @@ class SilentTracks(EBMLMasterElement):
 class Blocks(EBMLList):
     itemclass = (matroska.blocks.SimpleBlock, matroska.blocks.BlockGroup)
 
+    #def __del__(self):
+        #print(f"Deleting {self}")
+
 class Cluster(EBMLMasterElement):
     ebmlID = b"\x1f\x43\xb6\x75"
     __ebmlchildren__ = (
@@ -34,12 +39,26 @@ class Cluster(EBMLMasterElement):
             EBMLProperty("silentTracks", SilentTracks, optional=True),
             EBMLProperty("position", Position, optional=True),
             EBMLProperty("prevSize", PrevSize, optional=True),
-            EBMLProperty("blocks", Blocks)
+            EBMLProperty("blocks", Blocks, optional=True)
         )
     __ebmlproperties__ = (
             EBMLProperty("offsetInSegment", int, optional=True),
-            EBMLProperty("dataSize", int, optional=True)
+            EBMLProperty("dataSize", int, optional=True),
         )
+
+    def __init__(self, timestamp, silentTracks=None, position=None, prevSize=None, blocks=None,
+                 offsetInSegment=None, dataSize=None, readonly=False, parent=None):
+        self.timestamp = timestamp
+        self.silentTracks = silentTracks
+        self.position = position
+        self.prevSize = prevSize
+        self.blocks = blocks
+        self.offsetInSegment = offsetInSegment
+        self.dataSize = dataSize
+        self.parent = parent
+        self._lock = threading.Lock()
+        self._iterBlockCount = 0
+        self.readonly = readonly
 
     @property
     def parent(self):
@@ -65,9 +84,17 @@ class Cluster(EBMLMasterElement):
         'trackNumber': Filters by trackNumber. Can be either an integer or list/tuple of integers.
         """
 
-        for block in self.iterBlocks(start_pts, startPosition=startPosition, trackNumber=trackNumber):
-            for packet in block.iterPackets():
-                yield packet
+        blocks = self.iterBlocks(start_pts, startPosition=startPosition, trackNumber=trackNumber)
+
+        try:
+            for block in blocks:
+                packets = block.iterPackets()
+
+                for packet in packets:
+                    yield packet
+
+        except GeneratorExit:
+            blocks.close()
 
     def iterBlocks(self, start_pts=0, startPosition=0, trackNumber=None):
         """
@@ -79,8 +106,22 @@ class Cluster(EBMLMasterElement):
         'trackNumber': Filters by trackNumber. Can be either an integer or list/tuple of integers.
         """
 
-        if hasattr(self, "_blocks"):
-            for block in self.blocks:
+        with self._lock:
+            blockswasnone = self.blocks is None
+            if blockswasnone:
+                if self.parent is not None:
+                    self._loadBlocks()
+
+                else:
+                    return
+
+            self._iterBlockCount += 1
+
+
+        blocks = iter(self.blocks)
+
+        try:
+            for block in blocks:
                 if block.pts*self.body.info.timestampScale >= start_pts*10**9:
                     break
 
@@ -91,7 +132,7 @@ class Cluster(EBMLMasterElement):
             elif block.trackNumber == trackNumber:
                 yield block
 
-            for block in self.blocks:
+            for block in blocks:
                 if trackNumber is None:
                     yield block
                 elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
@@ -99,54 +140,39 @@ class Cluster(EBMLMasterElement):
                 elif block.trackNumber == trackNumber:
                     yield block
 
-        else:
-            offset = max(startPosition, 0)
+        except GeneratorExit:
+            with self._lock:
+                self._iterBlockCount -= 1
 
-            while offset < self.dataSize:
-                with self.body.lock:
-                    self.body.seek(self.offsetInSegment + offset)
-                    block = self.body.readElement(self._childTypes, parent=self)
+                if blockswasnone and self._iterBlockCount == 0:
+                    self._forgetBlocks()
 
-                    if block is None:
-                        raise ReadError("")
+    def _forgetBlocks(self):
+        rostatus = self.readonly
+        self._readonly = False
+        self.blocks = None
+        self._readonly = rostatus
+        gc.collect()
 
-                    offset = self.body.tell() - self.offsetInSegment
-
-                if isinstance(block, (matroska.blocks.SimpleBlock, matroska.blocks.BlockGroup)) \
-                            and block.pts*self.body.info.timestampScale >= start_pts*10**9:
-                    if trackNumber is None:
-                        break
-
-                    elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
-                        break
-
-                    elif block.trackNumber == trackNumber:
-                        break
-
-            yield block
-
-            while offset < self.dataSize:
-                with self.body.lock:
-                    self.body.seek(self.offsetInSegment + offset)
-                    block = self.body.readElement((matroska.blocks.SimpleBlock, matroska.blocks.BlockGroup), parent=self)
-
-                    offset = self.body.tell() - self.offsetInSegment
-
-                if block is not None:
-                    if trackNumber is None:
-                        yield block
-
-                    elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
-                        yield block
-
-                    elif block.trackNumber == trackNumber:
-                        yield block
+    def _loadBlocks(self):
+        data = self.parent.readbytes(self.offsetInSegment, self.dataSize)
+        rostatus = self.readonly
+        self._readonly = False
+        self._timestamp = None
+        self.silentTracks = None
+        self.prevSize = None
+        self.position = None
+        self.blocks = []
+        self._decodeData(data)
+        self.readonly = rostatus
 
     @classmethod
     def _fromFile(cls, file, size, ebmlID=None, parent=None):
         if file.seekable() and parent is not None:
             self = cls.__new__(cls)
             self._parent = parent
+            self._lock = threading.Lock()
+            self._iterBlockCount = 0
 
             with parent.lock:
                 self.offsetInSegment = parent.tell()
@@ -167,6 +193,26 @@ class Cluster(EBMLMasterElement):
             return self
         else:
             return super(Cluster, cls)._fromFile(file, size, ebmlID, parent)
+
+    def _toBytes(self):
+        if self.blocks is None and self.parent is not None:
+            return self.parent.readbytes(self._offsetInSegment, self._dataSize)
+
+        else:
+            return super(Cluster, self)._toBytes()
+
+    def _toFile(self, file):
+        if self.parent is not None:
+            self._offsetInSegment = self.parent.tell()
+            self._dataSize = self._size()
+
+            super(Cluster, self)._toFile(file)
+
+            with self._lock:
+                if self._iterBlockCount == 0:
+                    self._forgetBlocks()
+        else:
+            super(Cluster, self)._toFile(file)
 
     @property
     def segment(self):
