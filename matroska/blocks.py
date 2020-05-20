@@ -1,5 +1,5 @@
 from ebml.base import EBMLMasterElement, EBMLData, EBMLInteger, EBMLElement, EBMLProperty, EBMLList
-from ebml.util import readVint, toVint, fromVint
+from ebml.util import readVint, toVint, fromVint, formatBytes
 import traceback
 import sys
 import zlib
@@ -306,6 +306,7 @@ class SimpleBlock(EBMLElement):
 
     @classmethod
     def _fromBytes(cls, data, parent=None):
+        #print("*", formatBytes(data[:32]), len(data))
         self = cls.__new__(cls)
         self._parent = parent
 
@@ -411,9 +412,9 @@ class SimpleBlock(EBMLElement):
 
         trackNumber = toVint(self.trackNumber)
         localpts = self.localpts.to_bytes(2, "big", signed=True)
-        flags = (self.keyFrame << 7 | self.invisible << 3 | self.lacing << 1 | self.discardable << 0).to_bytes(1, "big")
 
         if len(self.packets) > 1:
+            flags = (self.keyFrame << 7 | self.invisible << 3 | self.lacing << 1 | self.discardable << 0).to_bytes(1, "big")
             if self.lacing == 0b00:
                 raise ValueError("Multiple packets requires lacing set to non-zero value.")
 
@@ -432,6 +433,7 @@ class SimpleBlock(EBMLElement):
                 lacingdata = self.encodeXiphLacing(sizes[:-1])
 
         else:
+            flags = (self.keyFrame << 7 | self.invisible << 3 |  self.discardable << 0).to_bytes(1, "big")
             lacingdata = b""
 
         if compression is not None:
