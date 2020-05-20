@@ -202,7 +202,11 @@ class Segment(ebml.document.EBMLBody):
 
     def iterClusters(self, start_pts=0, startClusterPosition=None, trackNumber=None):
         if startClusterPosition is None:
-            cuePoint = self.findCue(start_pts, trackNumber)
+            try:
+                cuePoint = self.findCue(start_pts, trackNumber)
+
+            except AttributeError:
+                cuePoint = None
 
             if cuePoint is not None:
                 for cueTrackPosition in cuePoint.cueTrackPositionsList:
@@ -261,6 +265,18 @@ class Segment(ebml.document.EBMLBody):
     def writeCluster(self):
         clusterOffset = self._lastClusterEnd or self.tell()
 
+        inClusterOffset = 0
+
+        for item in self._currentCluster.iterchildren():
+            if item in self._blocksToIndex:
+                cueTrackPositions = matroska.cues.CueTrackPositions(cueClusterPosition=clusterOffset,
+                                                                    cueRelativePosition=inClusterOffset, cueTrack=item.trackNumber)
+
+                cuePoint = matroska.cues.CuePoint(cueTime=item.pts, cueTrackPositionsList=[cueTrackPositions])
+                self.cues.cuePoints.append(cuePoint)
+
+            inClusterOffset += item.size()
+
         with self.lock:
             n = self.infoOffset
 
@@ -273,18 +289,6 @@ class Segment(ebml.document.EBMLBody):
             self._lastClusterEnd = clusterOffset + self._currentCluster.size()
             self.writeChildElement(self._currentCluster)
             self.flush()
-
-        inClusterOffset = 0
-
-        for item in self._currentCluster.iterchildren():
-            if item in self._blocksToIndex:
-                cueTrackPositions = matroska.cues.CueTrackPositions(cueClusterPosition=clusterOffset,
-                                                                    cueRelativePosition=inClusterOffset, cueTrack=item.trackNumber)
-
-                cuePoint = matroska.cues.CuePoint(cueTime=item.pts, cueTrackPositionsList=[cueTrackPositions])
-                self.cues.cuePoints.append(cuePoint)
-
-            inClusterOffset += item.size()
 
         self._currentCluster = None
         self._currentBlocks.clear()
@@ -324,13 +328,22 @@ class Segment(ebml.document.EBMLBody):
         elements.
         """
 
-        trackEntry = self.tracks.byTrackNumber[packet.trackNumber]
-        packet.compression = trackEntry.compression
-        isDefaultDuration = packet.duration is None or (trackEntry.defaultDuration is not None and abs(trackEntry.defaultDuration - packet.duration) <= 2)
-        maxInLace = trackEntry.maxInLace if trackEntry.maxInLace is not None else 8
         timestampScale = self.info.timestampScale
+
+        trackEntry = self.tracks.byTrackNumber[packet.trackNumber]
+
+        defaultDuration = trackEntry.defaultDuration
+        packet.compression = trackEntry.compression
+        maxInLace = trackEntry.maxInLace if trackEntry.maxInLace is not None else 8
+
+        packetDuration = packet.duration or defaultDuration or 0
+
+        isDefaultDuration = defaultDuration is not None and abs(defaultDuration - packetDuration) <= 2
+
         isVideoKeyframe = trackEntry.video is not None and packet.keyframe
+
         isSubtitle = trackEntry.trackType == 17
+
         nonemptyCluster = self._currentCluster is not None and len(self._currentCluster.blocks)
         ptsOverflow = nonemptyCluster and abs(int(packet.pts/timestampScale - \
                                               self._currentCluster.timestamp)) >= 2**15
@@ -398,21 +411,19 @@ class Segment(ebml.document.EBMLBody):
         self._trackPackets[trackEntry.trackNumber] += 1
         self._trackBytes[trackEntry.trackNumber] += packet.size
 
-        if packet.pts is not None and packet.duration is not None:
-            currentDuration = self.info.duration
-            currentTrackDuration = self._trackDurations.get(trackEntry.trackNumber, 0)
+        if packet.pts is not None:
+            packet_end = float(packet.pts + (packetDuration or 0))
 
-            self._trackDurations[trackEntry.trackNumber] = max(currentTrackDuration, float(packet.pts + packet.duration)/10**9)
+            currentDuration = self.info.duration
 
             if currentDuration is not None:
-                self.info.duration = max(currentDuration, float(packet.pts + packet.duration)/timestampScale)
+                self.info.duration = max(currentDuration, packet_end/timestampScale)
 
             else:
-                self.info.duration = float(packet.pts + packet.duration)/timestampScale
+                self.info.duration = packet_end/timestampScale
 
-        elif packet.pts is not None:
             currentTrackDuration = self._trackDurations.get(trackEntry.trackNumber, 0)
-            self._trackDurations[trackEntry.trackNumber] = max(currentTrackDuration, float(packet.pts + packet.duration)/10**9)
+            self._trackDurations[trackEntry.trackNumber] = max(currentTrackDuration, packet_end/10**9)
 
     def makeStatsTags(self):
         for track in self.tracks.trackEntries:
