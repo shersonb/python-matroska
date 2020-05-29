@@ -518,6 +518,10 @@ class Tracks(EBMLMasterElement):
     __ebmlchildren__ = (trackEntries,)
 
     @property
+    def __len__(self):
+        return self.trackEntries.__len__
+
+    @property
     def append(self):
         return self.trackEntries.append
 
@@ -596,7 +600,7 @@ class Tracks(EBMLMasterElement):
             trackNumber += 1
 
         if codecID.upper().startswith("V_"):
-            video = Video(pixelWidth=pixelWidth)
+            video = Video(pixelWidth=pixelWidth, pixelHeight=pixelHeight)
             audio = None
             trackType = 1
         elif codecID.upper().startswith("A_"):
@@ -609,7 +613,7 @@ class Tracks(EBMLMasterElement):
             trackType = 17
 
         track = TrackEntry(trackNumber=trackNumber, trackUID=trackUID,
-                           trackType=trackType, codecID=codecID)
+                           trackType=trackType, codecID=codecID, audio=audio, video=video)
 
         self.append(track)
         return track
