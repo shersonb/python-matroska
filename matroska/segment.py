@@ -49,6 +49,7 @@ class Segment(ebml.document.EBMLBody):
         self._trackBytes = {}
         self._trackDurations = {}
         self._seekHead = None
+        self._seekHeadOffset = None
         super(Segment, self).__init__(file, parent=parent)
 
     @property
@@ -71,6 +72,10 @@ class Segment(ebml.document.EBMLBody):
                 if seek.seekID == self.attachments.ebmlID:
                     return seek.seekPosition
 
+    @property
+    def contentsSize(self):
+        return self._contentssize
+
     def _init_read(self):
         super(Segment, self)._init_read()
 
@@ -79,6 +84,9 @@ class Segment(ebml.document.EBMLBody):
             child = self.readChildElement()
 
             if isinstance(child, matroska.seekhead.SeekHead):
+                if self._file.writable():
+                    child = child.copy(parent=self)
+
                 self.seekHead = child
                 break
 
@@ -145,11 +153,15 @@ class Segment(ebml.document.EBMLBody):
         return data
 
     def readChildElement(self):
+        offset = self.tell()
         child = super().readChildElement()
 
         if isinstance(child, matroska.cluster.Cluster):
             self._clustersByOffset[child.offsetInSegment] = child
             self._clustersByTimestamp[child.timestamp] = child
+
+        if isinstance(child, matroska.seekhead.SeekHead):
+            self._seekHeadOffset = offset
 
         return child
 
@@ -368,7 +380,7 @@ class Segment(ebml.document.EBMLBody):
                                                 packets=[packet], keyFrame=packet.keyframe, lacing=0)
 
             blockgroup = matroska.blocks.BlockGroup(block=block,
-                                                    blockDuration=int(packet.duration/timestampScale), parent=self._currentCluster)
+                                                    blockDuration=int(packetDuration/timestampScale), parent=self._currentCluster)
 
             self._currentCluster.blocks.append(blockgroup)
             if trackEntry in self._currentBlocks:
