@@ -200,6 +200,10 @@ class Chapters(EBMLMasterElement):
         return self.editionEntries.append
 
     @property
+    def __len__(self):
+        return self.editionEntries.__len__
+
+    @property
     def insert(self):
         return self.editionEntries.insert
 
