@@ -1,4 +1,5 @@
 from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList
+from ebml.util import readVint, fromVint
 import matroska.blocks
 import threading
 import gc
@@ -93,7 +94,7 @@ class Cluster(EBMLMasterElement):
                 for packet in packets:
                     yield packet
 
-        except GeneratorExit:
+        finally:
             blocks.close()
 
     def iterBlocks(self, start_pts=0, startPosition=0, trackNumber=None):
@@ -140,7 +141,7 @@ class Cluster(EBMLMasterElement):
                 elif block.trackNumber == trackNumber:
                     yield block
 
-        except GeneratorExit:
+        finally:
             with self._lock:
                 self._iterBlockCount -= 1
 
@@ -217,6 +218,30 @@ class Cluster(EBMLMasterElement):
     @property
     def segment(self):
         return self.parent
+
+    def scan(self):
+        """Quick scan cluster for packets."""
+        data = self.parent.readbytes(self.offsetInSegment, self.dataSize)
+        timestampScale = self.segment.info.timestampScale
+
+        for offset, ebmlID, sizesize, data in self.parse(data):
+            if ebmlID == matroska.blocks.SimpleBlock.ebmlID:
+                (trackNumber, localpts, keyframe, invisible, discardable, lacing, n, data) = matroska.blocks.SimpleBlock.parse(data)
+
+                defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
+
+                for k in range(n):
+                    yield (offset, trackNumber, timestampScale*(self.timestamp + localpts) + k*defaultDuration, keyframe, invisible, discardable, None, None)
+
+            elif ebmlID == matroska.blocks.BlockGroup.ebmlID:
+                (trackNumber, localpts, keyframe, invisible, discardable, lacing, n, data, referencePriority, referenceBlocks) = matroska.blocks.BlockGroup.parse(data)
+
+                keyframe = not referenceBlocks and not discardable
+
+                defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
+
+                for k in range(n):
+                    yield (offset, trackNumber, timestampScale*(self.timestamp + localpts) + k*defaultDuration, keyframe, invisible, discardable, referencePriority, referenceBlocks)
 
 class Clusters(EBMLList):
     itemclass = Cluster
