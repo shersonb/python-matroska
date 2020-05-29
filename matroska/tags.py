@@ -1,5 +1,5 @@
 from ebml.base import EBMLInteger, EBMLString, EBMLMasterElement, EBMLData, EBMLList, EBMLProperty
-#from ebml.util import EBMLList, EBMLProperty, EBMLProperty
+import matroska.chapters
 
 class TargetTypeValue(EBMLInteger):
     ebmlID = b"\x68\xca"
@@ -165,12 +165,22 @@ class Tags(EBMLMasterElement):
         self.append(tag)
         return tag
 
-    def addEpisodeTag(self, title, part=None):
+    def addEpisodeTag(self, title, part=None, chapters=()):
         targets = Targets(targetTypeValue=50, targetType="EPISODE")
         simpleTags = [SimpleTag(tagName="TITLE", tagString=title)]
 
         if part is not None:
             simpleTags.append(SimpleTag(tagName="PART_NUMBER", tagString=part))
+
+        if chapters:
+            targets.tagChapterUIDs = []
+
+            for chapter in chapters:
+                if isinstance(chapter, matroska.chapters.ChapterAtom):
+                    targets.tagChapterUIDs.append(chapter.chapterUID)
+
+                else:
+                    targets.tagChapterUIDs.append(chapter)
 
         tag = Tag(targets, simpleTags)
         self.append(tag)
