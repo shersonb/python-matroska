@@ -207,6 +207,10 @@ class Attachments(EBMLMasterElement):
         return self.attachedFiles.append
 
     @property
+    def __len__(self):
+        return self.attachedFiles.__len__
+
+    @property
     def insert(self):
         return self.attachedFiles.insert
 
