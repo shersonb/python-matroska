@@ -1,114 +1,36 @@
 from ebml.base import EBMLMasterElement, EBMLInteger, EBMLList, EBMLProperty, EBMLData
-import ebml.exceptions
-from ebml.util import fromVint
-import regex
 
-intmatch = b"(?:" + b"|".join(rf"\x{128+n:02x}[\x00-\xff]{{{n}}}".encode("utf8") for n in range(1, 9)) + b")"
-vintmatch = b"(?:" + b"|".join((rf"[\x{2**(8 - n):02x}-\x{2**(9 - n) - 1:02x}][\x00-\xff]{{{n-1}}}").encode("utf8") for n in range(1, 9)) + b")"
-intparse = rb"[\x81-\x88]([\x00-\xff]+)"
-
-class CueMasterElement(EBMLMasterElement):
-    @classmethod
-    def fromBytes(cls, data, parent=None):
-        vint, data = regex.findall(cls.re_parse, data)[0]
-        if fromVint(vint) != len(data):
-            raise ebml.exceptions.DecodeError("Advertised size does not match actual size.")
-
-        return cls._fromBytes(data, parent)
-
-    @classmethod
-    def _fromBytes(cls, data, parent=None):
-        self = cls.__new__(cls)
-        self._parent = parent
-
-        for childData, garbage in regex.findall(self.re_itemparse, data):
-            if garbage:
-                print((childData, garbage), self.re_itemparse, "*",  data)
-                raise ebml.exceptions.DecodeError(f"Garbage found attempting to decode {cls} object.")
-
-            if len(childData) == 0:
-                break
-
-            ebmlID = regex.match(vintmatch, childData).group()
-            prop = self.__ebmlpropertiesbyid__[ebmlID]
-            childcls = self._childTypes[ebmlID]
-            child = childcls.fromBytes(childData, parent=self)
-
-            if issubclass(prop.cls, EBMLList):
-                if not hasattr(self, f"_{prop.attrname}"):
-                    prop.__set__(self, [child])
-
-                else:
-                    prop.__get__(self).append(child)
-
-            else:
-                prop.__set__(self, child)
-
-        return self
-
-    def __init_subclass__(cls):
-        _children_matches = []
-
-        for prop in cls.__ebmlchildren__:
-            if issubclass(prop.cls, EBMLList):
-                _children_matches.append(prop.cls.itemclass.re_match)
-
-            else:
-                _children_matches.append(prop.cls.re_match)
-
-        _children_matches = b"(?:" + b"|".join(_children_matches) + b")"
-        cls.re_match = regex.escape(cls.ebmlID) + vintmatch +  _children_matches + b"*"
-        cls.re_parse = b"^" + regex.escape(cls.ebmlID) + b"(" + vintmatch + b")(" + _children_matches + b"*)$"
-        cls.re_itemparse = b"(" + _children_matches + b")|([\\x00-\\xff]+)$"
-
-class CueInteger(EBMLInteger):
-    @classmethod
-    def fromBytes(cls, data, parent=None):
-        data = regex.findall(cls.re_parse, data)[0]
-        return cls._fromBytes(data, parent)
-
-    @classmethod
-    def _fromBytes(cls, data, parent=None):
-        self = cls.__new__(cls)
-        self._parent = parent
-        self._data = int.from_bytes(data, "big")
-        return self
-
-    def __init_subclass__(cls):
-        cls.re_match = regex.escape(cls.ebmlID) + intmatch
-        cls.re_parse = b"^" + regex.escape(cls.ebmlID) + intparse + b"$"
-
-class CueRefTime(CueInteger):
+class CueRefTime(EBMLInteger):
     ebmlID = b"\x96"
 
-class CueReference(CueMasterElement):
+class CueReference(EBMLMasterElement):
     ebmlID = b"\xdb"
     __ebmlchildren__ = (
             EBMLProperty("cueRefTime", CueRefTime),
         )
 
-class CueTrack(CueInteger):
+class CueTrack(EBMLInteger):
     ebmlID = b"\xf7"
 
-class CueClusterPosition(CueInteger):
+class CueClusterPosition(EBMLInteger):
     ebmlID = b"\xf1"
 
-class CueRelativePosition(CueInteger):
+class CueRelativePosition(EBMLInteger):
     ebmlID = b"\xf0"
 
-class CueDuration(CueInteger):
+class CueDuration(EBMLInteger):
     ebmlID = b"\xb2"
 
-class CueBlockNumber(CueInteger):
+class CueBlockNumber(EBMLInteger):
     ebmlID = b"\x53\x78"
 
-class CueCodecState(CueInteger):
+class CueCodecState(EBMLInteger):
     ebmlID = b"\xea"
 
 class CueReferences(EBMLList):
     itemclass = CueReference
 
-class CueTrackPositions(CueMasterElement):
+class CueTrackPositions(EBMLMasterElement):
     ebmlID = b"\xb7"
     __ebmlchildren__ = (
             EBMLProperty("cueTrack", CueTrack),
@@ -120,14 +42,14 @@ class CueTrackPositions(CueMasterElement):
             EBMLProperty("cueReferences", CueReferences, optional=True),
         )
 
-class CueTime(CueInteger):
+class CueTime(EBMLInteger):
     ebmlID = b"\xb3"
 
 class CueTrackPositionsList(EBMLList):
     itemclass = CueTrackPositions
 
 
-class CuePoint(CueMasterElement):
+class CuePoint(EBMLMasterElement):
     ebmlID = b"\xbb"
 
     __ebmlchildren__ = (
@@ -143,6 +65,6 @@ class CuePoints(EBMLList):
     itemclass = CuePoint
 
 
-class Cues(CueMasterElement):
+class Cues(EBMLMasterElement):
     ebmlID = b"\x1c\x53\xbb\x6b"
     __ebmlchildren__ = (EBMLProperty("cuePoints", CuePoints),)
