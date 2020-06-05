@@ -1,6 +1,7 @@
 from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList
-from ebml.util import readVint, fromVint
+from ebml.util import readVint, fromVint, parseElements
 import matroska.blocks
+import matroska.util
 import threading
 import gc
 
@@ -60,6 +61,12 @@ class Cluster(EBMLMasterElement):
         self._lock = threading.Lock()
         self._iterBlockCount = 0
         self.readonly = readonly
+
+    def _size(self):
+        if self.blocks is None and self.offsetInSegment:
+            return self.dataSize
+
+        return super()._size()
 
     @property
     def parent(self):
@@ -224,24 +231,63 @@ class Cluster(EBMLMasterElement):
         data = self.parent.readbytes(self.offsetInSegment, self.dataSize)
         timestampScale = self.segment.info.timestampScale
 
-        for offset, ebmlID, sizesize, data in self.parse(data):
+        for offset, ebmlID, sizesize, data in parseElements(data):
             if ebmlID == matroska.blocks.SimpleBlock.ebmlID:
-                (trackNumber, localpts, keyframe, invisible, discardable, lacing, n, data) = matroska.blocks.SimpleBlock.parse(data)
-
+                (trackNumber, localpts, keyframe, invisible, discardable, lacing, data) = matroska.blocks.SimpleBlock.parsepkt(data)
                 defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
 
-                for k in range(n):
-                    yield (offset, trackNumber, timestampScale*(self.timestamp + localpts) + k*defaultDuration, keyframe, invisible, discardable, None, None)
+                if lacing == 0b10:
+                    sizes, data = matroska.blocks.SimpleBlock.decodeFixedSizeLacing(data)
+
+                elif lacing == 0b11:
+                    sizes, data = matroska.blocks.SimpleBlock.decodeEBMLLacing(data)
+
+                elif lacing == 0b01:
+                    sizes, data = matroska.blocks.SimpleBlock.decodeXiphLacing(data)
+
+                else:
+                    sizes = []
+
+                for k, size in enumerate(sizes):
+                    yield (offset, size, trackNumber, timestampScale*(self.timestamp + localpts) + k*defaultDuration,
+                           defaultDuration, keyframe, invisible, discardable, None, None)
+
+                yield (offset, len(data) - sum(sizes), trackNumber, timestampScale*(self.timestamp + localpts) + len(sizes)*defaultDuration,
+                       defaultDuration, keyframe, invisible, discardable, None, None)
 
             elif ebmlID == matroska.blocks.BlockGroup.ebmlID:
-                (trackNumber, localpts, keyframe, invisible, discardable, lacing, n, data, referencePriority, referenceBlocks) = matroska.blocks.BlockGroup.parse(data)
+                (trackNumber, localpts, duration, keyframe, invisible, discardable, lacing,
+                        data, referencePriority, referenceBlocks) = matroska.blocks.BlockGroup.parsepkt(data)
 
                 keyframe = not referenceBlocks and not discardable
-
                 defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
 
-                for k in range(n):
-                    yield (offset, trackNumber, timestampScale*(self.timestamp + localpts) + k*defaultDuration, keyframe, invisible, discardable, referencePriority, referenceBlocks)
+                if lacing == 0b10:
+                    sizes, data = matroska.blocks.Block.decodeFixedSizeLacing(data)
+
+                elif lacing == 0b11:
+                    sizes, data = matroska.blocks.Block.decodeEBMLLacing(data)
+
+                elif lacing == 0b01:
+                    sizes, data = matroska.blocks.Block.decodeXiphLacing(data)
+
+                else:
+                    sizes = []
+
+                if duration is None:
+                    duration = defaultDuration
+
+                else:
+                    duration *= timestampScale
+
+                for k, size in enumerate(sizes):
+                    yield (offset, size, trackNumber, timestampScale*(self.timestamp + localpts) + k*defaultDuration,
+                           duration, keyframe, invisible, discardable, referencePriority, referenceBlocks)
+
+                yield (offset, len(data) - sum(sizes), trackNumber, timestampScale*(self.timestamp + localpts) + len(sizes)*defaultDuration,
+                       duration, keyframe, invisible, discardable, referencePriority, referenceBlocks)
+
+
 
 class Clusters(EBMLList):
     itemclass = Cluster

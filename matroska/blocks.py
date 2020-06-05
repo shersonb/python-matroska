@@ -1,5 +1,5 @@
 from ebml.base import EBMLMasterElement, EBMLData, EBMLInteger, EBMLElement, EBMLProperty, EBMLList
-from ebml.util import readVint, toVint, fromVint, formatBytes
+from ebml.util import parseVint, toVint, fromVint, formatBytes, parseElements
 import traceback
 import sys
 import zlib
@@ -15,8 +15,14 @@ class Packet(object):
     keyframe = EBMLProperty("keyframe", bool, optional=True)
     invisible = EBMLProperty("invisible", bool, optional=True)
     discardable = EBMLProperty("discardable", bool, optional=True)
-    referenceblocks = EBMLProperty("referenceBlocks", intlist, optional=True)
+    referenceBlocks = EBMLProperty("referenceBlocks", intlist, optional=True)
     readonly = EBMLElement.readonly
+
+    @classmethod
+    def fromAVPacket(cls, packet, trackNumber=None):
+        trackNumber = trackNumber or packet.stream_index + 1
+        return cls(trackNumber, data=packet.to_bytes(),
+                   pts=int(10**9*packet.pts*packet.time_base), keyframe=packet.is_keyframe)
 
     @property
     def trackEntry(self):
@@ -58,16 +64,19 @@ class Packet(object):
 
         self._compression = value
 
-    def __init__(self, trackNumber, data=None, zdata=None, compression=None, pts=None, duration=None, keyframe=None, parent=None):
+    def __init__(self, trackNumber, data=None, zdata=None, compression=None, pts=None, duration=None,
+                 keyframe=None, invisible=False, discardable=False, referenceBlocks=None, parent=None):
         self.trackNumber = trackNumber
         self.data = data
         self._compression = None
         self.compression = compression
         self.zdata = zdata
-
         self.pts = pts
         self.duration = duration
         self.keyframe = keyframe
+        self.invisible = invisible
+        self.discardable = discardable
+        self.referenceBlocks = referenceBlocks
         self.parent = parent
 
     def __repr__(self):
@@ -87,17 +96,32 @@ class Packet(object):
     def cluster(self):
         return self.parent.cluster
 
-    def copy(self, parent=None):
-        return type(self)(
-            trackNumber=self.trackNumber,
-            data=self.data,
-            zdata=self.zdata,
-            compression=self.compression,
-            pts=self.pts,
-            duration=self.duration,
-            keyframe=self.keyframe,
-            parent=parent
+    def copy(self, trackNumber=None, parent=None):
+        """Create a copy of packet."""
+
+        kwargs = dict(
+                trackNumber=trackNumber or self.trackNumber,
+                data=self.data,
+                parent=parent
             )
+
+        for attr in ("invisible", "discardable", "zdata", "compression", "duration",
+                     "keyframe", "invisible", "discardable"):
+            if hasattr(self, attr):
+                kwargs[attr] = getattr(self, attr)
+
+        if hasattr(self, "time_base") and self.time_base is not None:
+            kwargs["pts"] = 10**9*self.pts*self.time_base
+
+            if hasattr(self, "referenceBlocks") and self.referenceBlocks is not None:
+                kwargs["referenceBlocks"] = [int(10**9*ref*self.time_base) for ref in self.referenceBlocks]
+
+        else:
+            kwargs["pts"] = self.pts
+            if hasattr(self, "referenceBlocks") and self.referenceBlocks is not None:
+                kwargs["referenceBlocks"] = self.referenceBlocks
+
+        return Packet(**kwargs)
 
 class Packets(EBMLList):
     itemclass = Packet
@@ -198,7 +222,8 @@ class SimpleBlock(EBMLElement):
             compression = self.trackEntry.compression
 
             for packet in self.packets:
-                packet.compression = compression
+                if packet.compression != compression:
+                    packet.compression = compression
 
             pktsizes = [pkt.size for pkt in self.packets]
         else:
@@ -299,38 +324,30 @@ class SimpleBlock(EBMLElement):
         n = data[0] + 1
         data = data[1:]
 
-        size = readVint(data)
-        data = data[len(size):]
+        size, data = parseVint(data)
         sizes = [fromVint(size)]
 
         for k in range(n - 2):
-            size = readVint(data)
+            size, data = parseVint(data)
             sizes.append(sizes[-1] + fromVint(size) - 2**(7*len(size) - 1) + 1)
-            data = data[len(size):]
 
         return sizes, data
 
-    @classmethod
-    def parse(cls, data):
+    @staticmethod
+    def parsepkt(data):
         """
         Parse data.
 
         Returns a tuple: (trackNumber, localpts, keyframe, invisible, discardable, lacing, numberInLace, lacedData)
         """
-        trackNumber = readVint(data)
-        data = data[len(trackNumber):]
+        trackNumber, data = parseVint(data)
         localpts = int.from_bytes(data[:2], "big", signed=True)
         flags = data[2]
         keyframe = bool(flags & 0b10000000)
         invisible = bool(flags & 0b00001000)
         discardable = (flags & 0b00000001)
         lacing = (flags & 0b00000110) >> 1
-
-        if lacing:
-            n = data[3] + 1
-            return (fromVint(trackNumber), localpts, keyframe, invisible, discardable, lacing, n, data[4:])
-
-        return (fromVint(trackNumber), localpts, keyframe, invisible, discardable, lacing, 1, data[3:])
+        return (fromVint(trackNumber), localpts, keyframe, invisible, discardable, lacing, data[3:])
 
     @classmethod
     def _fromBytes(cls, data, parent=None):
@@ -338,7 +355,7 @@ class SimpleBlock(EBMLElement):
         self._parent = parent
 
         (self.trackNumber, self.localpts, self.keyFrame, self.invisible,
-         self.discardable, self.lacing, n, data) = self.parse(data)
+         self.discardable, self.lacing, data) = self.parsepkt(data)
 
         trackEntry = self.trackEntry
 
@@ -350,13 +367,13 @@ class SimpleBlock(EBMLElement):
         self.packets = Packets([], parent=self)
 
         if self.lacing == 0b10:
-            sizes, data = self.decodeFixedSizeLacing(n.to_bytes(1, "big") + data)
+            sizes, data = self.decodeFixedSizeLacing(data)
 
         elif self.lacing == 0b11:
-            sizes, data = self.decodeEBMLLacing(n.to_bytes(1, "big") + data)
+            sizes, data = self.decodeEBMLLacing(data)
 
         elif self.lacing == 0b01:
-            sizes, data = self.decodeXiphLacing(n.to_bytes(1, "big") + data)
+            sizes, data = self.decodeXiphLacing(data)
 
         else:
             sizes = []
@@ -420,7 +437,8 @@ class SimpleBlock(EBMLElement):
             compression = trackEntry.compression
 
             for pkt in self.packets:
-                pkt.compression = compression
+                if pkt.compression != compression:
+                    pkt.compression = compression
 
         else:
             compression = None
@@ -495,15 +513,14 @@ class Block(SimpleBlock):
         if None not in (self.parent, self.segment) and self.parent.blockDuration is not None:
             return self.parent.blockDuration*self.segment.info.timestampScale
 
-    @classmethod
-    def parse(cls, data):
+    @staticmethod
+    def parsepkt(data):
         """
         Parse data.
 
         Returns a tuple: (trackNumber, localpts, keyframe, invisible, discardable, lacing, numberInLace, lacedData)
         """
-        trackNumber = readVint(data)
-        data = data[len(trackNumber):]
+        trackNumber, data = parseVint(data)
         localpts = int.from_bytes(data[:2], "big", signed=True)
         flags = data[2]
         keyframe = False
@@ -511,19 +528,15 @@ class Block(SimpleBlock):
         discardable = (flags & 0b00000001)
         lacing = (flags & 0b00000110) >> 1
 
+        return (fromVint(trackNumber), localpts, keyframe, invisible, discardable, lacing, data[3:])
 
-        if lacing:
-            n = data[3] + 1
-            return (fromVint(trackNumber), localpts, keyframe, invisible, discardable, lacing, n, data[4:])
-
-        return (fromVint(trackNumber), localpts, keyframe, invisible, discardable, lacing, 1, data[3:])
+    #parsepkt = matroska.util.parseBlock
 
 class BlockAdditional(SimpleBlock):
     ebmlID = b"\xa5"
 
 class BlockAddID(EBMLInteger):
     ebmlID = b"\xee"
-
 
 class BlockMore(EBMLMasterElement):
     ebmlID = b"\xa6"
@@ -579,7 +592,6 @@ class BlockGroup(EBMLMasterElement):
         )
 
     def iterPackets(self):
-        #print(dir(self))
         for packet in self.block.iterPackets():
             packet = packet.copy(parent=self.block)
 
@@ -622,8 +634,8 @@ class BlockGroup(EBMLMasterElement):
         if hasattr(self, "_block"):
             self.block.ancestorChanged()
 
-    @classmethod
-    def parse(cls, data):
+    @staticmethod
+    def parsepkt(data):
         """
         Parse data.
 
@@ -631,10 +643,11 @@ class BlockGroup(EBMLMasterElement):
         """
         referenceBlocks = []
         referencePriority = None
+        duration = None
 
-        for offset, ebmlID, sizesize, data in super().parse(data):
+        for offset, ebmlID, sizesize, data in parseElements(data):
             if ebmlID == Block.ebmlID:
-                (trackNumber, localpts, keyframe, invisible, discardable, lacing, n, data) = Block.parse(data)
+                (trackNumber, localpts, keyframe, invisible, discardable, lacing, pktdata) = Block.parsepkt(data)
 
             elif ebmlID == ReferencePriority.ebmlID:
                 referencePriority = int.from_bytes(data, "big")
@@ -642,4 +655,8 @@ class BlockGroup(EBMLMasterElement):
             elif ebmlID == ReferenceBlock.ebmlID:
                 referenceBlocks.append(int.from_bytes(data, "big", signed=True))
 
-        return (trackNumber, localpts, keyframe, invisible, discardable, lacing, n, data, referencePriority, referenceBlocks)
+            elif ebmlID == BlockDuration.ebmlID:
+                duration = int.from_bytes(data, "big")
+
+        return (trackNumber, localpts, duration, keyframe, invisible, discardable, lacing, pktdata, referencePriority, referenceBlocks)
+
