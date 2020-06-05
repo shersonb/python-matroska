@@ -126,6 +126,10 @@ class Tags(EBMLMasterElement):
     def __getitem__(self):
         return self.tagList.__getitem__
 
+    @property
+    def __len__(self):
+        return self.tagList.__len__
+
     def addMovieTag(self, title, director=None, dateReleased=None, comment=None):
         targets = Targets(targetTypeValue=50, targetType="MOVIE")
         simpleTags = [SimpleTag(tagName="TITLE", tagString=title)]
