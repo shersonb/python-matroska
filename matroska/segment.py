@@ -11,6 +11,7 @@ import matroska.attachments
 import matroska.cluster
 import matroska.cues
 import matroska.tags
+import matroska.blocks
 import ebml
 import sys
 import random
@@ -71,10 +72,6 @@ class Segment(ebml.document.EBMLBody):
             for seek in self.seekHead.seeks:
                 if seek.seekID == self.attachments.ebmlID:
                     return seek.seekPosition
-
-    @property
-    def contentsSize(self):
-        return self._contentssize
 
     def _init_read(self):
         super(Segment, self)._init_read()
@@ -340,6 +337,9 @@ class Segment(ebml.document.EBMLBody):
         elements.
         """
 
+        if not isinstance(packet, matroska.blocks.Packet):
+            packet = matroska.blocks.Packet.copy(packet)
+
         timestampScale = self.info.timestampScale
 
         trackEntry = self.tracks.byTrackNumber[packet.trackNumber]
@@ -348,9 +348,9 @@ class Segment(ebml.document.EBMLBody):
         packet.compression = trackEntry.compression
         maxInLace = trackEntry.maxInLace if trackEntry.maxInLace is not None else 8
 
-        packetDuration = packet.duration or defaultDuration or 0
+        packetDuration = packet.duration or defaultDuration or None
 
-        isDefaultDuration = defaultDuration is not None and abs(defaultDuration - packetDuration) <= 2
+        isDefaultDuration = defaultDuration is not None and (not packetDuration or abs(defaultDuration - packetDuration) <= 2)
 
         isVideoKeyframe = trackEntry.video is not None and packet.keyframe
 
@@ -374,13 +374,22 @@ class Segment(ebml.document.EBMLBody):
 
         localpts = int(packet.pts/timestampScale - self._currentCluster.timestamp)
 
-        if not isDefaultDuration:
+        if not isDefaultDuration or packet.referenceBlocks:
             """Use BlockGroup/Block"""
             block = matroska.blocks.Block(trackNumber=packet.trackNumber, localpts=localpts,
-                                                packets=[packet], keyFrame=packet.keyframe, lacing=0)
+                                                packets=[packet], keyFrame=packet.keyframe, lacing=0,
+                                                invisible=packet.invisible, discardable=packet.discardable)
 
-            blockgroup = matroska.blocks.BlockGroup(block=block,
-                                                    blockDuration=int(packetDuration/timestampScale), parent=self._currentCluster)
+
+            if packet.referenceBlocks:
+                referenceBlocks = [int((packet.pts + ref)/timestampScale - self._currentCluster.timestamp) - localpts for ref in packet.referenceBlocks]
+
+            else:
+                referenceBlocks = None
+
+            blockDuration = packetDuration and int(packetDuration/timestampScale)
+            blockgroup = matroska.blocks.BlockGroup(block=block, referenceBlocks=referenceBlocks,
+                                                    blockDuration=blockDuration, parent=self._currentCluster)
 
             self._currentCluster.blocks.append(blockgroup)
             if trackEntry in self._currentBlocks:
@@ -392,6 +401,7 @@ class Segment(ebml.document.EBMLBody):
         elif not trackEntry.flagLacing:
             block = matroska.blocks.SimpleBlock(trackNumber=packet.trackNumber, localpts=localpts,
                                                 packets=[packet], keyFrame=packet.keyframe, lacing=0,
+                                                invisible=packet.invisible, discardable=packet.discardable,
                                                 parent=self._currentCluster)
 
             self._currentCluster.blocks.append(block)
@@ -472,6 +482,8 @@ class Segment(ebml.document.EBMLBody):
             if self._currentCluster is not None:
                 self.writeCluster()
 
+            self.seek(max(self.tell(), 128))
+
             self.writeChildElement(self.cues)
             self.makeStatsTags()
             self.writeChildElement(self.tags)
@@ -485,3 +497,16 @@ class Segment(ebml.document.EBMLBody):
     @property
     def packetsMuxed(self):
         return self._packetsMuxed
+
+    @property
+    def clusterCount(self):
+        return len(self._clustersByOffset)
+
+    @property
+    def firstClusterOffset(self):
+        return min(self._clustersByOffset.keys())
+
+    @property
+    def lastClusterEnd(self):
+        return self._lastClusterEnd
+
