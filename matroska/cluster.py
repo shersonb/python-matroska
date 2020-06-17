@@ -204,15 +204,21 @@ class Cluster(EBMLMasterElement):
 
     def _toBytes(self):
         if self.blocks is None and self.parent is not None:
-            return self.parent.readbytes(self._offsetInSegment, self._dataSize)
+            return self.parent.readbytes(self.dataOffsetInParent, self.dataSize)
 
         else:
             return super(Cluster, self)._toBytes()
 
+    def toFile(self, file):
+        if self.parent is not None:
+            self.offsetInParent = self.parent.tell()
+
+        super(Cluster, self).toFile(file)
+
     def _toFile(self, file):
         if self.parent is not None:
-            self._offsetInSegment = self.parent.tell()
-            self._dataSize = self._size()
+            self.dataOffsetInParent = self.parent.tell()
+            self.dataSize = self._size()
 
             super(Cluster, self)._toFile(file)
 
@@ -225,6 +231,61 @@ class Cluster(EBMLMasterElement):
     @property
     def segment(self):
         return self.parent
+
+    def scanBlocks(self):
+        """Quick scan cluster for packets."""
+        data = self.parent.readbytes(self.offsetInSegment, self.dataSize)
+        timestampScale = self.segment.info.timestampScale
+
+        for offset, ebmlID, sizesize, data in parseElements(data):
+            dataSize = len(data)
+
+            if ebmlID == matroska.blocks.SimpleBlock.ebmlID:
+                (trackNumber, localpts, keyframe, invisible, discardable, lacing, data) = matroska.blocks.SimpleBlock.parsepkt(data)
+                defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
+
+                if lacing == 0b10:
+                    sizes, data = matroska.blocks.SimpleBlock.decodeFixedSizeLacing(data)
+
+                elif lacing == 0b11:
+                    sizes, data = matroska.blocks.SimpleBlock.decodeEBMLLacing(data)
+
+                elif lacing == 0b01:
+                    sizes, data = matroska.blocks.SimpleBlock.decodeXiphLacing(data)
+
+                else:
+                    sizes = []
+
+                yield (offset, ebmlID, sizesize, dataSize, len(sizes) + 1, trackNumber, timestampScale*(self.timestamp + localpts),
+                       defaultDuration, keyframe, invisible, discardable, None, None)
+
+            elif ebmlID == matroska.blocks.BlockGroup.ebmlID:
+                (trackNumber, localpts, duration, keyframe, invisible, discardable, lacing,
+                        data, referencePriority, referenceBlocks) = matroska.blocks.BlockGroup.parsepkt(data)
+
+                keyframe = not referenceBlocks and not discardable
+                defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
+
+                if lacing == 0b10:
+                    sizes, data = matroska.blocks.Block.decodeFixedSizeLacing(data)
+
+                elif lacing == 0b11:
+                    sizes, data = matroska.blocks.Block.decodeEBMLLacing(data)
+
+                elif lacing == 0b01:
+                    sizes, data = matroska.blocks.Block.decodeXiphLacing(data)
+
+                else:
+                    sizes = []
+
+                if duration is None:
+                    duration = defaultDuration
+
+                else:
+                    duration *= timestampScale
+
+                yield (offset, ebmlID, sizesize, dataSize, len(sizes) + 1, trackNumber, timestampScale*(self.timestamp + localpts),
+                       duration, keyframe, invisible, discardable, referencePriority, referenceBlocks)
 
     def scan(self):
         """Quick scan cluster for packets."""
