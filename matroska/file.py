@@ -42,10 +42,20 @@ class MatroskaFile(ebml.document.EBMLDocument):
 
     @property
     def mux(self):
+        """
+        Shortcut to Segment.mux().
+
+        See help(matroska.segment.Segment.mux).
+        """
         return self.segment.mux
 
     @property
     def demux(self):
+        """
+        Shortcut to Segment.iterPackets().
+
+        See help(matroska.segment.Segment.iterPackets).
+        """
         return self.segment.iterPackets
 
     @property
