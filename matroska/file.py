@@ -1,24 +1,24 @@
-import ebml
+from ebml.head import EBMLHead
+from ebml.exceptions import ReadError
+from ebml.document import EBMLDocument
 import random
-import matroska.segment
-import matroska.tracks
-import matroska.info
+from matroska.segment import Segment
 
-class MatroskaFile(ebml.document.EBMLDocument):
+class MatroskaFile(EBMLDocument):
     def __init__(self, file, mode="r"):
-        super(MatroskaFile, self).__init__(file, mode, bodycls=matroska.segment.Segment)
+        super(MatroskaFile, self).__init__(file, mode, bodycls=Segment)
 
     def _init_read(self):
-        head = ebml.head.EBMLHead.fromFile(self._file)
+        head = EBMLHead.fromFile(self._file)
 
         if head.docType != "matroska":
-            raise ebml.document.ReadError("Not a matroska file.")
+            raise ReadError("Not a matroska file.")
 
         self.head = head
         self.body = self._bodycls(self._file)
 
     def _init_write(self):
-        head = ebml.head.EBMLHead(docType="matroska", docTypeReadVersion=2, docTypeVersion=4,
+        head = EBMLHead(docType="matroska", docTypeReadVersion=2, docTypeVersion=4,
                                   ebmlMaxIDLength=4, ebmlMaxSizeLength=8, ebmlReadVersion=1, ebmlVersion=1)
 
         self.writeEBMLHead(head)

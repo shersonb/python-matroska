@@ -1,16 +1,17 @@
 from ebml.base import EBMLInteger, EBMLString, EBMLMasterElement, EBMLElement, Void, EBMLList, EBMLProperty
 from ebml.util import peekVint, fromVint
-#from ebml.util import ebmlproperty as EBMLProperty
+from ebml import __version__ as ebmlversion
 
-import matroska
-import matroska.seekhead
-import matroska.info
-import matroska.tracks
-import matroska.chapters
-import matroska.attachments
-import matroska.cluster
-import matroska.cues
-import matroska.tags
+from matroska import __version__ as mkvversion
+from matroska.seekhead import SeekHead, Seek
+from matroska.info import Info
+from matroska.tracks import Tracks
+from matroska.chapters import Chapters
+from matroska.attachments import Attachments
+from matroska.cluster import Cluster, Clusters
+from matroska.cues import Cues, CueTrackPositions, CuePoint
+from matroska.tags import Tag, Tags, Targets, SimpleTag
+from matroska.blocks import Packet, Block, BlockGroup, SimpleBlock
 import matroska.blocks
 import ebml
 import sys
@@ -24,17 +25,17 @@ __all__ = ["Segment"]
 class Segment(ebml.document.EBMLBody):
     ebmlID = b"\x18\x53\x80\x67"
     __ebmlchildren__ = (
-            EBMLProperty("seekHead", matroska.seekhead.SeekHead),
-            EBMLProperty("info", matroska.info.Info),
-            EBMLProperty("tracks", matroska.tracks.Tracks),
-            EBMLProperty("chapters", matroska.chapters.Chapters, optional=True),
-            EBMLProperty("attachments", matroska.attachments.Attachments, optional=True),
-            #EBMLProperty("clusters", matroska.cluster.Clusters),
-            EBMLProperty("cues", matroska.cues.Cues, optional=True),
-            EBMLProperty("tags", matroska.tags.Tags, optional=True),
+            EBMLProperty("seekHead", SeekHead),
+            EBMLProperty("info", Info),
+            EBMLProperty("tracks", Tracks),
+            EBMLProperty("chapters", Chapters, optional=True),
+            EBMLProperty("attachments", Attachments, optional=True),
+            #EBMLProperty("clusters", Clusters),
+            EBMLProperty("cues", Cues, optional=True),
+            EBMLProperty("tags", Tags, optional=True),
          )
 
-    _childTypes = {matroska.cluster.Cluster.ebmlID: matroska.cluster.Cluster}
+    _childTypes = {Cluster.ebmlID: Cluster}
 
     allowunknown = False
 
@@ -80,7 +81,7 @@ class Segment(ebml.document.EBMLBody):
             offset = self.tell()
             child = self.readChildElement()
 
-            if isinstance(child, matroska.seekhead.SeekHead):
+            if isinstance(child, SeekHead):
                 if self._file.writable():
                     child = child.copy(parent=self)
 
@@ -102,17 +103,17 @@ class Segment(ebml.document.EBMLBody):
                             prop.__set__(self, self.readChildElement())
 
     def _init_write(self):
-        self.seekHead = matroska.seekhead.SeekHead([], parent=self)
+        self.seekHead = SeekHead([], parent=self)
 
-        self.info = matroska.info.Info(timestampScale=10**6, writingApp="",
-                                       muxingApp=f"Python {sys.version}; python-matroska {matroska.__version__}; python-ebml {ebml.__version__}",
+        self.info = Info(timestampScale=10**6, writingApp="",
+                                       muxingApp=f"Python {sys.version}; python-matroska {mkversion}; python-ebml {ebmlversion}",
                                        parent=self)
 
-        self.tracks = matroska.tracks.Tracks([], parent=self)
-        self.chapters = matroska.chapters.Chapters([], parent=self)
-        self.attachments = matroska.attachments.Attachments([], parent=self)
-        self.cues = matroska.cues.Cues([])
-        self.tags = matroska.tags.Tags([])
+        self.tracks = Tracks([], parent=self)
+        self.chapters = Chapters([], parent=self)
+        self.attachments = Attachments([], parent=self)
+        self.cues = Cues([])
+        self.tags = Tags([])
 
         super(Segment, self)._init_write()
 
@@ -153,38 +154,37 @@ class Segment(ebml.document.EBMLBody):
         offset = self.tell()
         child = super().readChildElement()
 
-        if isinstance(child, matroska.cluster.Cluster):
+        if isinstance(child, Cluster):
             self._clustersByOffset[child.offsetInSegment] = child
             self._clustersByTimestamp[child.timestamp] = child
 
-        if isinstance(child, matroska.seekhead.SeekHead):
+        if isinstance(child, SeekHead):
             self._seekHeadOffset = offset
 
         return child
 
     def readCluster(self):
         childTypes = list(self._childTypes.keys())
-        childTypes.remove(matroska.cluster.Cluster.ebmlID)
-        return self.readElement(matroska.cluster.Cluster, parent=self, ignore=childTypes)
+        childTypes.remove(Cluster.ebmlID)
+        return self.readElement(Cluster, parent=self, ignore=childTypes)
 
     def writeChildElement(self, child):
         offset = super().writeChildElement(child)
 
-        if isinstance(child, matroska.cluster.Cluster):
+        if isinstance(child, Cluster):
             self._clustersByOffset[offset] = child
             self._clustersByTimestamp[child.timestamp] = child
 
-        if isinstance(child, (matroska.info.Info, matroska.tracks.Tracks,
-                              matroska.attachments.Attachments, matroska.cues.Cues,
-                              matroska.tags.Tags, matroska.chapters.Chapters)):
+        if isinstance(child, (Info, Tracks,
+                              Attachments, Cues,
+                              Tags, Chapters)):
             for seek in list.copy(self.seekHead.seeks):
                 if seek.seekID == child.ebmlID:
                     seek.seekPosition = offset
                     break
 
             else:
-                self.seekHead.seeks.append(
-                    matroska.seekhead.Seek(seekID=child.ebmlID, seekPosition=offset))
+                self.seekHead.seeks.append(Seek(seekID=child.ebmlID, seekPosition=offset))
 
         return offset
 
@@ -278,10 +278,10 @@ class Segment(ebml.document.EBMLBody):
 
         for item in self._currentCluster.iterchildren():
             if item in self._blocksToIndex:
-                cueTrackPositions = matroska.cues.CueTrackPositions(cueClusterPosition=clusterOffset,
+                cueTrackPositions = CueTrackPositions(cueClusterPosition=clusterOffset,
                                                                     cueRelativePosition=inClusterOffset, cueTrack=item.trackNumber)
 
-                cuePoint = matroska.cues.CuePoint(cueTime=item.pts, cueTrackPositionsList=[cueTrackPositions])
+                cuePoint = CuePoint(cueTime=item.pts, cueTrackPositionsList=[cueTrackPositions])
                 self.cues.cuePoints.append(cuePoint)
 
             inClusterOffset += item.size()
@@ -337,8 +337,8 @@ class Segment(ebml.document.EBMLBody):
         elements.
         """
 
-        if not isinstance(packet, matroska.blocks.Packet):
-            packet = matroska.blocks.Packet.copy(packet)
+        if not isinstance(packet, Packet):
+            packet = Packet.copy(packet)
 
         timestampScale = self.info.timestampScale
 
@@ -364,19 +364,19 @@ class Segment(ebml.document.EBMLBody):
 
         if self._packetsMuxed == 0:
             self._init_mux()
-            self._currentCluster = matroska.cluster.Cluster(timestamp=int(packet.pts/timestampScale),
+            self._currentCluster = Cluster(timestamp=int(packet.pts/timestampScale),
                                                         blocks=[], parent=self)
 
         if newClusterNeeded:
             self.writeCluster()
-            self._currentCluster = matroska.cluster.Cluster(timestamp=int(packet.pts/timestampScale),
+            self._currentCluster = Cluster(timestamp=int(packet.pts/timestampScale),
                                                             blocks=[], parent=self)
 
         localpts = int(packet.pts/timestampScale - self._currentCluster.timestamp)
 
         if not isDefaultDuration or packet.referenceBlocks:
             """Use BlockGroup/Block"""
-            block = matroska.blocks.Block(trackNumber=packet.trackNumber, localpts=localpts,
+            block = Block(trackNumber=packet.trackNumber, localpts=localpts,
                                                 packets=[packet], keyFrame=packet.keyframe, lacing=0,
                                                 invisible=packet.invisible, discardable=packet.discardable)
 
@@ -388,7 +388,7 @@ class Segment(ebml.document.EBMLBody):
                 referenceBlocks = None
 
             blockDuration = packetDuration and int(packetDuration/timestampScale)
-            blockgroup = matroska.blocks.BlockGroup(block=block, referenceBlocks=referenceBlocks,
+            blockgroup = BlockGroup(block=block, referenceBlocks=referenceBlocks,
                                                     blockDuration=blockDuration, parent=self._currentCluster)
 
             self._currentCluster.blocks.append(blockgroup)
@@ -399,7 +399,7 @@ class Segment(ebml.document.EBMLBody):
                 self._blocksToIndex.add(blockgroup)
 
         elif not trackEntry.flagLacing:
-            block = matroska.blocks.SimpleBlock(trackNumber=packet.trackNumber, localpts=localpts,
+            block = SimpleBlock(trackNumber=packet.trackNumber, localpts=localpts,
                                                 packets=[packet], keyFrame=packet.keyframe, lacing=0,
                                                 invisible=packet.invisible, discardable=packet.discardable,
                                                 parent=self._currentCluster)
@@ -419,7 +419,7 @@ class Segment(ebml.document.EBMLBody):
             packet.parent = block
 
         else:
-            block = matroska.blocks.SimpleBlock(trackNumber=packet.trackNumber,
+            block = SimpleBlock(trackNumber=packet.trackNumber,
                                                 localpts=localpts, packets=[packet],
                                                 keyFrame=packet.keyframe, lacing=0b10, parent=self._currentCluster)
 
@@ -456,25 +456,25 @@ class Segment(ebml.document.EBMLBody):
             simpleTags = []
             if duration:
                 bps = int(8*size/duration+0.5)
-                simpleTags.append(matroska.tags.SimpleTag(tagLanguage="eng",
+                simpleTags.append(SimpleTag(tagLanguage="eng",
                                                         tagName="BPS", tagString=f"{bps:d}"))
 
             m, s = divmod(duration, 60)
             m = int(m)
             s = float(s)
             h, m = divmod(m, 60)
-            simpleTags.append(matroska.tags.SimpleTag(tagLanguage="eng",
+            simpleTags.append(SimpleTag(tagLanguage="eng",
                                                       tagName="DURATION", tagString=f"{h:d}:{m:02d}:{s:012.9f}"))
-            simpleTags.append(matroska.tags.SimpleTag(tagLanguage="eng",
+            simpleTags.append(SimpleTag(tagLanguage="eng",
                                                       tagName="NUMBER_OF_FRAMES", tagString=f"{n}"))
-            simpleTags.append(matroska.tags.SimpleTag(tagLanguage="eng",
+            simpleTags.append(SimpleTag(tagLanguage="eng",
                                                       tagName="NUMBER_OF_BYTES", tagString=f"{size}"))
-            simpleTags.append(matroska.tags.SimpleTag(tagLanguage="eng",
+            simpleTags.append(SimpleTag(tagLanguage="eng",
                                                       tagName="_STATISTICS_WRITING_APP", tagString=f"python {sys.version}"))
-            simpleTags.append(matroska.tags.SimpleTag(tagLanguage="eng",
+            simpleTags.append(SimpleTag(tagLanguage="eng",
                                                       tagName="_STATISTICS_TAGS", tagString="BPS DURATION NUMBER_OF_BYTES NUMBER_OF_FRAMES"))
-            targets = matroska.tags.Targets(tagTrackUIDs=[track.trackUID], targetType="MOVIE", targetTypeValue=50)
-            tag = matroska.tags.Tag(simpleTags=simpleTags, targets=targets)
+            targets = Targets(tagTrackUIDs=[track.trackUID], targetType="MOVIE", targetTypeValue=50)
+            tag = Tag(simpleTags=simpleTags, targets=targets)
             self.tags.tagList.append(tag)
 
     def close(self):

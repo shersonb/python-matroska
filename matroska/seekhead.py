@@ -1,7 +1,5 @@
-#!/usr/bin/python
 from ebml.base import EBMLInteger, EBMLData, EBMLMasterElement, EBMLList, EBMLProperty
 from ebml.util import formatBytes
-
 
 __all__ = ["SeekID", "SeekPosition", "Seek", "SeekHead"]
 

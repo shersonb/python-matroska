@@ -1,7 +1,6 @@
 from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList
 from ebml.util import readVint, fromVint, parseElements
-import matroska.blocks
-import matroska.util
+from matroska.blocks import SimpleBlock, BlockGroup, Blocks
 import threading
 import gc
 
@@ -27,12 +26,6 @@ class SilentTracks(EBMLMasterElement):
     __ebmlchildren__ = (
             EBMLProperty("silentTrackNumbers", SilentTrackNumbers),
         )
-
-class Blocks(EBMLList):
-    itemclass = (matroska.blocks.SimpleBlock, matroska.blocks.BlockGroup)
-
-    #def __del__(self):
-        #print(f"Deleting {self}")
 
 class Cluster(EBMLMasterElement):
     ebmlID = b"\x1f\x43\xb6\x75"
@@ -188,7 +181,7 @@ class Cluster(EBMLMasterElement):
 
                 for k in range(8):
                     child = parent.readElement((Timestamp, SilentTracks, Position, PrevSize), parent=self,
-                                               ignore=(matroska.blocks.BlockGroup.ebmlID, matroska.blocks.SimpleBlock.ebmlID))
+                                               ignore=(BlockGroup.ebmlID, SimpleBlock.ebmlID))
 
                     if child is None:
                         break
@@ -240,18 +233,18 @@ class Cluster(EBMLMasterElement):
         for offset, ebmlID, sizesize, data in parseElements(data):
             dataSize = len(data)
 
-            if ebmlID == matroska.blocks.SimpleBlock.ebmlID:
-                (trackNumber, localpts, keyframe, invisible, discardable, lacing, data) = matroska.blocks.SimpleBlock.parsepkt(data)
+            if ebmlID == SimpleBlock.ebmlID:
+                (trackNumber, localpts, keyframe, invisible, discardable, lacing, data) = SimpleBlock.parsepkt(data)
                 defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
 
                 if lacing == 0b10:
-                    sizes, data = matroska.blocks.SimpleBlock.decodeFixedSizeLacing(data)
+                    sizes, data = SimpleBlock.decodeFixedSizeLacing(data)
 
                 elif lacing == 0b11:
-                    sizes, data = matroska.blocks.SimpleBlock.decodeEBMLLacing(data)
+                    sizes, data = SimpleBlock.decodeEBMLLacing(data)
 
                 elif lacing == 0b01:
-                    sizes, data = matroska.blocks.SimpleBlock.decodeXiphLacing(data)
+                    sizes, data = SimpleBlock.decodeXiphLacing(data)
 
                 else:
                     sizes = []
@@ -259,9 +252,9 @@ class Cluster(EBMLMasterElement):
                 yield (offset, ebmlID, sizesize, dataSize, len(sizes) + 1, trackNumber, timestampScale*(self.timestamp + localpts),
                        defaultDuration, keyframe, invisible, discardable, None, None)
 
-            elif ebmlID == matroska.blocks.BlockGroup.ebmlID:
+            elif ebmlID == BlockGroup.ebmlID:
                 (trackNumber, localpts, duration, keyframe, invisible, discardable, lacing,
-                        data, referencePriority, referenceBlocks) = matroska.blocks.BlockGroup.parsepkt(data)
+                        data, referencePriority, referenceBlocks) = BlockGroup.parsepkt(data)
 
                 keyframe = not referenceBlocks and not discardable
                 defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
@@ -293,18 +286,18 @@ class Cluster(EBMLMasterElement):
         timestampScale = self.segment.info.timestampScale
 
         for offset, ebmlID, sizesize, data in parseElements(data):
-            if ebmlID == matroska.blocks.SimpleBlock.ebmlID:
-                (trackNumber, localpts, keyframe, invisible, discardable, lacing, data) = matroska.blocks.SimpleBlock.parsepkt(data)
+            if ebmlID == SimpleBlock.ebmlID:
+                (trackNumber, localpts, keyframe, invisible, discardable, lacing, data) = SimpleBlock.parsepkt(data)
                 defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
 
                 if lacing == 0b10:
-                    sizes, data = matroska.blocks.SimpleBlock.decodeFixedSizeLacing(data)
+                    sizes, data = SimpleBlock.decodeFixedSizeLacing(data)
 
                 elif lacing == 0b11:
-                    sizes, data = matroska.blocks.SimpleBlock.decodeEBMLLacing(data)
+                    sizes, data = SimpleBlock.decodeEBMLLacing(data)
 
                 elif lacing == 0b01:
-                    sizes, data = matroska.blocks.SimpleBlock.decodeXiphLacing(data)
+                    sizes, data = SimpleBlock.decodeXiphLacing(data)
 
                 else:
                     sizes = []
@@ -316,9 +309,9 @@ class Cluster(EBMLMasterElement):
                 yield (offset, len(data) - sum(sizes), trackNumber, timestampScale*(self.timestamp + localpts) + len(sizes)*defaultDuration,
                        defaultDuration, keyframe, invisible, discardable, None, None)
 
-            elif ebmlID == matroska.blocks.BlockGroup.ebmlID:
+            elif ebmlID == BlockGroup.ebmlID:
                 (trackNumber, localpts, duration, keyframe, invisible, discardable, lacing,
-                        data, referencePriority, referenceBlocks) = matroska.blocks.BlockGroup.parsepkt(data)
+                        data, referencePriority, referenceBlocks) = BlockGroup.parsepkt(data)
 
                 keyframe = not referenceBlocks and not discardable
                 defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
@@ -347,8 +340,6 @@ class Cluster(EBMLMasterElement):
 
                 yield (offset, len(data) - sum(sizes), trackNumber, timestampScale*(self.timestamp + localpts) + len(sizes)*defaultDuration,
                        duration, keyframe, invisible, discardable, referencePriority, referenceBlocks)
-
-
 
 class Clusters(EBMLList):
     itemclass = Cluster

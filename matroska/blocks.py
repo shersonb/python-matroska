@@ -663,3 +663,5 @@ class BlockGroup(EBMLMasterElement):
 
         return (trackNumber, localpts, duration, keyframe, invisible, discardable, lacing, pktdata, referencePriority, referenceBlocks)
 
+class Blocks(EBMLList):
+    itemclass = (SimpleBlock, BlockGroup)

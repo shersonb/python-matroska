@@ -1,5 +1,5 @@
 from ebml.base import EBMLInteger, EBMLData, EBMLString, EBMLMasterElement, EBMLFloat, EBMLList, EBMLProperty
-import ebml.util
+from ebml.util import peekVint, fromVint
 import io
 import mimetypes
 import os
@@ -164,13 +164,13 @@ class AttachedFile(EBMLMasterElement):
         dataRead = 0
 
         while dataRead < size:
-            ebmlID = ebml.util.peekVint(file)
-            childsize = ebml.util.peekVint(file, len(ebmlID))
+            ebmlID = peekVint(file)
+            childsize = peekVint(file, len(ebmlID))
             childcls = self._childTypes[ebmlID]
             prop = self.__ebmlpropertiesbyid__[ebmlID]
             child = childcls.fromFile(file, parent=self)
             prop.__set__(self, child)
-            dataRead += len(ebmlID) + len(childsize) + ebml.util.fromVint(childsize)
+            dataRead += len(ebmlID) + len(childsize) + fromVint(childsize)
 
         return self
 
@@ -252,15 +252,15 @@ class Attachments(EBMLMasterElement):
         dataRead = 0
 
         while dataRead < size:
-            ebmlID = ebml.util.peekVint(file)
-            childsize = ebml.util.peekVint(file, len(ebmlID))
+            ebmlID = peekVint(file)
+            childsize = peekVint(file, len(ebmlID))
             child = AttachedFile.fromFile(file, parent=self)
             self.attachedFiles.append(child)
 
             if not child.readonly:
                 child.readonly = True
 
-            dataRead += len(ebmlID) + len(childsize) + ebml.util.fromVint(childsize)
+            dataRead += len(ebmlID) + len(childsize) + fromVint(childsize)
 
         return self
 

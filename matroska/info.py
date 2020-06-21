@@ -1,5 +1,4 @@
 from ebml.base import EBMLInteger, EBMLData, EBMLString, EBMLMasterElement, EBMLFloat, EBMLDateTime, EBMLList, EBMLProperty
-#from ebml.util import EBMLList, EBMLProperty, EBMLProperty
 
 class UID(EBMLData):
     data = EBMLProperty("data", bytes)

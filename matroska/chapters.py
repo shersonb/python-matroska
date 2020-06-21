@@ -1,5 +1,4 @@
 from ebml.base import EBMLInteger, EBMLData, EBMLString, EBMLMasterElement, EBMLList, EBMLProperty
-#from ebml.util import EBMLList, EBMLProperty, EBMLProperty
 
 class ChapterTrackNumber(EBMLInteger):
     ebmlID = b"\x89"
