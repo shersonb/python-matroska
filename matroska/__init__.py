@@ -1,4 +1,4 @@
-__version__ = "0.0.1"
+from .version import __version__
 from matroska.tracks import Tracks, TrackEntry, Audio, Video
 from matroska.info import Info
 from matroska.blocks import Packet, SimpleBlock, Block, BlockGroup

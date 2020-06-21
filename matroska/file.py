@@ -2,7 +2,7 @@ from ebml.head import EBMLHead
 from ebml.exceptions import ReadError
 from ebml.document import EBMLDocument
 import random
-from matroska.segment import Segment
+from .segment import Segment
 
 class MatroskaFile(EBMLDocument):
     def __init__(self, file, mode="r"):

@@ -1,5 +1,5 @@
 from ebml.base import EBMLInteger, EBMLString, EBMLMasterElement, EBMLData, EBMLList, EBMLProperty
-import matroska.chapters
+from .chapters import ChapterAtom
 
 class TargetTypeValue(EBMLInteger):
     ebmlID = b"\x68\xca"
@@ -180,7 +180,7 @@ class Tags(EBMLMasterElement):
             targets.tagChapterUIDs = []
 
             for chapter in chapters:
-                if isinstance(chapter, matroska.chapters.ChapterAtom):
+                if isinstance(chapter, ChapterAtom):
                     targets.tagChapterUIDs.append(chapter.chapterUID)
 
                 else:

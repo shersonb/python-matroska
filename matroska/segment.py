@@ -1,19 +1,19 @@
 from ebml.base import EBMLInteger, EBMLString, EBMLMasterElement, EBMLElement, Void, EBMLList, EBMLProperty
 from ebml.util import peekVint, fromVint
+from ebml.document import EBMLBody
 from ebml import __version__ as ebmlversion
 
-from matroska import __version__ as mkvversion
-from matroska.seekhead import SeekHead, Seek
-from matroska.info import Info
-from matroska.tracks import Tracks
-from matroska.chapters import Chapters
-from matroska.attachments import Attachments
-from matroska.cluster import Cluster, Clusters
-from matroska.cues import Cues, CueTrackPositions, CuePoint
-from matroska.tags import Tag, Tags, Targets, SimpleTag
-from matroska.blocks import Packet, Block, BlockGroup, SimpleBlock
-import matroska.blocks
-import ebml
+from .version import __version__ as mkvversion
+from .seekhead import SeekHead, Seek
+from .info import Info
+from .tracks import Tracks
+from .chapters import Chapters
+from .attachments import Attachments
+from .cluster import Cluster, Clusters
+from .cues import Cues, CueTrackPositions, CuePoint
+from .tags import Tag, Tags, Targets, SimpleTag
+from .blocks import Packet, Block, BlockGroup, SimpleBlock
+
 import sys
 import random
 import threading
@@ -22,7 +22,7 @@ import gc
 
 __all__ = ["Segment"]
 
-class Segment(ebml.document.EBMLBody):
+class Segment(EBMLBody):
     ebmlID = b"\x18\x53\x80\x67"
     __ebmlchildren__ = (
             EBMLProperty("seekHead", SeekHead),
