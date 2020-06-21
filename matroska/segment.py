@@ -106,7 +106,7 @@ class Segment(EBMLBody):
         self.seekHead = SeekHead([], parent=self)
 
         self.info = Info(timestampScale=10**6, writingApp="",
-                                       muxingApp=f"Python {sys.version}; python-matroska {mkversion}; python-ebml {ebmlversion}",
+                                       muxingApp=f"Python {sys.version}; python-matroska {mkvversion}; python-ebml {ebmlversion}",
                                        parent=self)
 
         self.tracks = Tracks([], parent=self)
