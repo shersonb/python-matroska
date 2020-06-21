@@ -105,19 +105,22 @@ class Packet(object):
                 parent=parent
             )
 
-        for attr in ("invisible", "discardable", "zdata", "compression", "duration",
+        for attr in ("invisible", "discardable", "zdata", "compression",
                      "keyframe", "invisible", "discardable"):
             if hasattr(self, attr):
                 kwargs[attr] = getattr(self, attr)
 
         if hasattr(self, "time_base") and self.time_base is not None:
             kwargs["pts"] = 10**9*self.pts*self.time_base
+            kwargs["duration"] = 10**9*self.duration*self.time_base
 
             if hasattr(self, "referenceBlocks") and self.referenceBlocks is not None:
                 kwargs["referenceBlocks"] = [int(10**9*ref*self.time_base) for ref in self.referenceBlocks]
 
         else:
             kwargs["pts"] = self.pts
+            kwargs["duration"] = self.duration
+
             if hasattr(self, "referenceBlocks") and self.referenceBlocks is not None:
                 kwargs["referenceBlocks"] = self.referenceBlocks
 

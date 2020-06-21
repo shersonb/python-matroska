@@ -172,7 +172,6 @@ class AttachedFile(EBMLMasterElement):
             prop.__set__(self, child)
             dataRead += len(ebmlID) + len(childsize) + ebml.util.fromVint(childsize)
 
-        self.readonly = True
         return self
 
     def save(self, path, noclobber=False):
@@ -257,6 +256,10 @@ class Attachments(EBMLMasterElement):
             childsize = ebml.util.peekVint(file, len(ebmlID))
             child = AttachedFile.fromFile(file, parent=self)
             self.attachedFiles.append(child)
+
+            if not child.readonly:
+                child.readonly = True
+
             dataRead += len(ebmlID) + len(childsize) + ebml.util.fromVint(childsize)
 
         return self
