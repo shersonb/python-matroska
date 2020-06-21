@@ -1,7 +1,7 @@
 from .version import __version__
-from matroska.tracks import Tracks, TrackEntry, Audio, Video
-from matroska.info import Info
-from matroska.blocks import Packet, SimpleBlock, Block, BlockGroup
-from matroska.chapters import Chapters, EditionEntry, ChapterAtom
-from matroska.tags import Tag, Tags, SimpleTag, Targets
-from matroska.file import MatroskaFile
+from .tracks import Tracks, TrackEntry, Audio, Video
+from .info import Info
+from .blocks import Packet, SimpleBlock, Block, BlockGroup
+from .chapters import Chapters, EditionEntry, ChapterAtom
+from .tags import Tag, Tags, SimpleTag, Targets
+from .file import MatroskaFile
