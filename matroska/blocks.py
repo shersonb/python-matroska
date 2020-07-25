@@ -604,6 +604,9 @@ class BlockGroup(EBMLMasterElement):
                 if self.referenceBlocks:
                     packet.referenceBlocks = [dt*self.segment.info.timestampScale for dt in self.referenceBlocks]
 
+            if not self.referenceBlocks:
+                packet.keyframe = True
+
             packet.readonly = True
             yield packet
 
