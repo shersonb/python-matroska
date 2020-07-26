@@ -3,6 +3,7 @@ from ebml.util import parseVint, toVint, fromVint, formatBytes, parseElements
 import traceback
 import sys
 import zlib
+from fractions import Fraction as QQ
 
 class intlist(EBMLList):
     itemclass = int
@@ -179,7 +180,14 @@ class SimpleBlock(EBMLElement):
 
     @property
     def pktduration(self):
-        return self.trackEntry.defaultDuration
+        if isinstance(self.trackEntry.defaultDuration, int):
+            q, r = divmod(self.trackEntry.defaultDuration, 1000)
+
+            if r % 111 in (0, 1):
+                """Possible repeating digit. Will assume as such."""
+                return 1000*q + r + QQ(r//111, 9)
+
+            return self.trackEntry.defaultDuration
 
     @property
     def duration(self):

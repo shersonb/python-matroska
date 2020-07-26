@@ -259,6 +259,12 @@ class Cluster(EBMLMasterElement):
                 keyframe = not referenceBlocks and not discardable
                 defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
 
+                q, r = divmod(defaultDuration, 1000)
+
+                if r % 111 in (0, 1):
+                    """Possible repeating digit. Will assume as such."""
+                    defaultDuration = 1000*q + r + QQ(r//111, 9)
+
                 if lacing == 0b10:
                     sizes, data = matroska.blocks.Block.decodeFixedSizeLacing(data)
 
