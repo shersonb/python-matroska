@@ -125,7 +125,7 @@ class ChapterAtom(EBMLMasterElement):
             EBMLProperty("chapterUID", ChapterUID),
             EBMLProperty("chapterStringUID", ChapterStringUID, True),
             EBMLProperty("chapterTimeStart", ChapterTimeStart),
-            EBMLProperty("chapterTimeEnd", ChapterTimeEnd),
+            EBMLProperty("chapterTimeEnd", ChapterTimeEnd, True),
             EBMLProperty("chapterFlagHidden", ChapterFlagHidden),
             EBMLProperty("chapterFlagEnabled", ChapterFlagEnabled),
             EBMLProperty("chapterSegmentUID", ChapterSegmentUID, True),
