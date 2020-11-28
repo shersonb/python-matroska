@@ -102,6 +102,9 @@ class Segment(EBMLBody):
                             self.seek(seek.seekPosition)
                             prop.__set__(self, self.readChildElement())
 
+        self.seek(0)
+        self.scan()
+
     def _init_write(self):
         self.seekHead = SeekHead([], parent=self)
 
@@ -189,7 +192,11 @@ class Segment(EBMLBody):
         return offset
 
     def deleteChildElement(self, offset):
-        offset = super().deleteChildElement(offset)
+        super().deleteChildElement(offset)
+
+        for seek in list.copy(self.seekHead.seeks):
+            if seek.seekPosition == offset:
+                self.seekHead.seeks.remove(seek)
 
         if offset in self._clustersByOffset:
             cluster = self._clustersByOffset.pop(offset)
@@ -202,12 +209,6 @@ class Segment(EBMLBody):
 
                 if len(cuePoint.cueTrackPositionsList) == 0:
                     self.cues.cuePoints.remove(cuePoint)
-
-        for seek in list.copy(self.seekHead.seeks):
-            if seek.seekPosition == offset:
-                self.seekHead.seeks.remove(seek)
-
-        return offset
 
     def iterClusters(self, start_pts=0, startClusterPosition=None, trackNumber=None):
         if startClusterPosition is None:
@@ -484,13 +485,23 @@ class Segment(EBMLBody):
 
             self.seek(max(self.tell(), 128))
 
-            self.writeChildElement(self.cues)
-            self.makeStatsTags()
-            self.writeChildElement(self.tags)
+            if self.cues not in self.seekHead:
+                self.writeChildElement(self.cues)
 
-            segmentSize = self.tell()
-            self.seek(0)
-            self.writeChildElement(self.seekHead)
+            if self.tags not in self.seekHead and \
+                (self._trackBytes or self._trackDurations or self._trackPackets):
+                self.makeStatsTags()
+                self.writeChildElement(self.tags)
+
+            if self._modified:
+                if self._seekHeadOffset is not None:
+                    self.deleteChildElement(self._seekHeadOffset)
+                    self.seek(self._seekHeadOffset)
+
+                else:
+                    self.seek(0)
+
+                self.writeChildElement(self.seekHead)
 
         super().close()
 

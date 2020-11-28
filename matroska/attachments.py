@@ -8,11 +8,11 @@ from itertools import count
 
 class FilePointer(object):
     def __init__(self, file, lock, offset, size):
-        if not isinstance(file, io.BufferedReader):
-            raise TypeError("File is not of type io.BufferedReader.")
+        if not isinstance(file, (io.BufferedReader, io.BufferedRandom)):
+            raise TypeError("File is not of type io.BufferedReader or io.BufferedRandom.")
 
         if not file.seekable():
-            raise ValueError("io.BufferedReader not seekable.")
+            raise ValueError(f"io.{file.__class__.__name__} not seekable.")
 
         self.file = file
         self.lock = lock
@@ -77,7 +77,7 @@ class FileData(EBMLData):
 
     def _size(self):
         if isinstance(self.data, bytes):
-            return super()._size(file)
+            return len(self.data)
 
         elif isinstance(self.data, FilePointer):
             return self.data.size
