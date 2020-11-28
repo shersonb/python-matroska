@@ -1,8 +1,9 @@
 from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList
-from ebml.util import readVint, fromVint, parseElements
+from ebml.util import readVint, fromVint, toVint, parseElements
 from matroska.blocks import SimpleBlock, BlockGroup, Blocks
 import threading
 import gc
+from fractions import Fraction as QQ
 
 __all__ = ["Cluster", "Clusters", "ClusterPointer", "Timestamp", "Position", "PrevSize", "SilentTrackNumber", "SilentTrackNumbers", "SilentTracks", "Blocks"]
 
@@ -107,46 +108,53 @@ class Cluster(EBMLMasterElement):
         'trackNumber': Filters by trackNumber. Can be either an integer or list/tuple of integers.
         """
 
-        with self._lock:
-            blockswasnone = self.blocks is None
-            if blockswasnone:
-                if self.parent is not None:
-                    self._loadBlocks()
+        data = self.parent.readbytes(self.offsetInSegment, self.dataSize)
+        timestampScale = self.segment.info.timestampScale
 
-                else:
-                    return
+        for offset, ebmlID, sizesize, data in parseElements(data):
+            if offset < startPosition:
+                continue
 
-            self._iterBlockCount += 1
+            dataSize = len(data)
 
+            if ebmlID == SimpleBlock.ebmlID:
+                (trackNumber_, localpts, keyframe, invisible, discardable, lacing, data_) = SimpleBlock.parsepkt(data)
+                defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
 
-        blocks = iter(self.blocks)
+                if (self.timestamp + localpts)*timestampScale < start_pts*10**9:
+                    continue
 
-        try:
-            for block in blocks:
-                if block.pts*self.body.info.timestampScale >= start_pts*10**9:
-                    break
+                if isinstance(trackNumber, (tuple, list)) and trackNumber_ not in trackNumber:
+                    continue
 
-            if trackNumber is None:
+                if trackNumber is not None and trackNumber_ != trackNumber:
+                    continue
+
+                block = SimpleBlock.fromBytes(ebmlID + toVint(len(data)) + data, parent=self)
+                block.offsetInParent = offset
+                block.dataOffsetInParent = offset + len(ebmlID) + sizesize
+                block.dataSize = len(data)
                 yield block
-            elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
+
+            elif ebmlID == BlockGroup.ebmlID:
+                (trackNumber_, localpts, duration, keyframe, invisible, discardable, lacing,
+                        data_, referencePriority, referenceBlocks) = BlockGroup.parsepkt(data)
+
+                if (self.timestamp + localpts)*timestampScale < start_pts*10**9:
+                    continue
+
+                if isinstance(trackNumber, (tuple, list)) and trackNumber_ not in trackNumber:
+                    continue
+
+                if trackNumber is not None and trackNumber_ != trackNumber:
+                    continue
+
+                block = BlockGroup.fromBytes(ebmlID + toVint(len(data)) + data, parent=self)
+                block.offsetInParent = offset
+                block.dataOffsetInParent = offset + len(ebmlID) + sizesize
+                block.dataSize = len(data)
                 yield block
-            elif block.trackNumber == trackNumber:
-                yield block
 
-            for block in blocks:
-                if trackNumber is None:
-                    yield block
-                elif isinstance(trackNumber, (tuple, list)) and block.trackNumber in trackNumber:
-                    yield block
-                elif block.trackNumber == trackNumber:
-                    yield block
-
-        finally:
-            with self._lock:
-                self._iterBlockCount -= 1
-
-                if blockswasnone and self._iterBlockCount == 0:
-                    self._forgetBlocks()
 
     def _forgetBlocks(self):
         rostatus = self.readonly
