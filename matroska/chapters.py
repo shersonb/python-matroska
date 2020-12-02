@@ -25,6 +25,10 @@ class ChapLanguages(EBMLList):
 class ChapLanguageIETF(EBMLString):
     ebmlID = b"\x43\x7d"
 
+class ChapLanguagesIETF(EBMLList):
+    itemclass = ChapLanguageIETF
+    attrname = "value"
+
 class ChapCountry(EBMLString):
     ebmlID = b"\x43\x7e"
 
@@ -37,7 +41,7 @@ class ChapterDisplay(EBMLMasterElement):
     __ebmlchildren__ = (
             EBMLProperty("chapString", ChapString),
             EBMLProperty("chapLanguages", ChapLanguages),
-            EBMLProperty("chapLanguageIETF", ChapLanguageIETF, True),
+            EBMLProperty("chapLanguagesIETF", ChapLanguagesIETF, True),
             EBMLProperty("chapCountries", ChapCountries, True)
         )
 
