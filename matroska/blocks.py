@@ -113,7 +113,9 @@ class Packet(object):
 
         if hasattr(self, "time_base") and self.time_base is not None:
             kwargs["pts"] = 10**9*self.pts*self.time_base
-            kwargs["duration"] = 10**9*self.duration*self.time_base
+
+            if hasattr(self, "duration") and self.duration is not None:
+                kwargs["duration"] = 10**9*self.duration*self.time_base
 
             if hasattr(self, "referenceBlocks") and self.referenceBlocks is not None:
                 kwargs["referenceBlocks"] = [int(10**9*ref*self.time_base) for ref in self.referenceBlocks]
