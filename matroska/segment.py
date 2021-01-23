@@ -332,10 +332,17 @@ class Segment(EBMLBody):
         self._trackBytes = {track.trackNumber: 0 for track in self.tracks.trackEntries}
         self._trackDurations = {track.trackNumber: 0 for track in self.tracks.trackEntries}
 
-    def mux(self, packet):
+    def mux(self, packet, newcluster=False, cuepoint=False):
         """
         Writes a packet to file. Automatically handles creation of Cluster, SimpleBlock, BlockGroup+Block
         elements.
+
+        Specify newcluster=True to force creation of new Cluster.
+
+        Specify cuepoint=True to force creation of a CuePoint.
+
+        Returns number of bytes written, accounting for compression,
+        excluding BlockGroup+Block/SimpleBlock overhead.
         """
 
         if not isinstance(packet, Packet):
@@ -361,7 +368,7 @@ class Segment(EBMLBody):
         ptsOverflow = nonemptyCluster and abs(int(packet.pts/timestampScale - \
                                               self._currentCluster.timestamp)) >= 2**15
 
-        newClusterNeeded = nonemptyCluster and (isVideoKeyframe or ptsOverflow)
+        newClusterNeeded = nonemptyCluster and (isVideoKeyframe or ptsOverflow or newcluster)
 
         if self._packetsMuxed == 0:
             self._init_mux()
@@ -381,7 +388,6 @@ class Segment(EBMLBody):
                                                 packets=[packet], keyFrame=packet.keyframe, lacing=0,
                                                 invisible=packet.invisible, discardable=packet.discardable)
 
-
             if packet.referenceBlocks:
                 referenceBlocks = [int((packet.pts + ref)/timestampScale - self._currentCluster.timestamp) - localpts for ref in packet.referenceBlocks]
 
@@ -393,10 +399,11 @@ class Segment(EBMLBody):
                                                     blockDuration=blockDuration, parent=self._currentCluster)
 
             self._currentCluster.blocks.append(blockgroup)
+
             if trackEntry in self._currentBlocks:
                 del self._currentBlocks[trackEntry]
 
-            if isVideoKeyframe or isSubtitle:
+            if isVideoKeyframe or isSubtitle or cuepoint:
                 self._blocksToIndex.add(blockgroup)
 
         elif not trackEntry.flagLacing:
@@ -407,7 +414,7 @@ class Segment(EBMLBody):
 
             self._currentCluster.blocks.append(block)
 
-            if isVideoKeyframe or isSubtitle:
+            if isVideoKeyframe or isSubtitle or cuepoint:
                 self._blocksToIndex.add(block)
 
         elif trackEntry in self._currentBlocks and len(self._currentBlocks[trackEntry].packets) < maxInLace:
@@ -427,7 +434,7 @@ class Segment(EBMLBody):
             self._currentCluster.blocks.append(block)
             self._currentBlocks[trackEntry] = block
 
-            if isVideoKeyframe or isSubtitle:
+            if isVideoKeyframe or isSubtitle or cuepoint:
                 self._blocksToIndex.add(blockgroup)
 
         self._packetsMuxed += 1
@@ -447,6 +454,8 @@ class Segment(EBMLBody):
 
             currentTrackDuration = self._trackDurations.get(trackEntry.trackNumber, 0)
             self._trackDurations[trackEntry.trackNumber] = max(currentTrackDuration, packet_end/10**9)
+
+        return packet.size
 
     def makeStatsTags(self):
         for track in self.tracks.trackEntries:
