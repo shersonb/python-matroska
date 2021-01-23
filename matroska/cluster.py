@@ -155,6 +155,11 @@ class Cluster(EBMLMasterElement):
                 block.dataSize = len(data)
                 yield block
 
+    def copy(self):
+        if self.blocks is None:
+            self._loadBlocks()
+
+        return super().copy()
 
     def _forgetBlocks(self):
         rostatus = self.readonly
