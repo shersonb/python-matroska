@@ -4,6 +4,7 @@ import traceback
 import sys
 import zlib
 from fractions import Fraction as QQ
+import weakref
 
 class intlist(EBMLList):
     itemclass = int
@@ -164,11 +165,19 @@ class SimpleBlock(EBMLElement):
     @property
     def parent(self):
         if hasattr(self, "_parent"):
+            if isinstance(self._parent, weakref.ref):
+                return self._parent()
+
             return self._parent
 
     @parent.setter
     def parent(self, value):
-        self._parent = value
+        try:
+            self._parent = weakref.ref(value)
+
+        except TypeError:
+            self._parent = value
+
         self.ancestorChanged()
 
     def ancestorChanged(self):
@@ -182,7 +191,7 @@ class SimpleBlock(EBMLElement):
 
     @property
     def pktduration(self):
-        if isinstance(self.trackEntry.defaultDuration, int):
+        if self.trackEntry is not None and isinstance(self.trackEntry.defaultDuration, int):
             q, r = divmod(self.trackEntry.defaultDuration, 1000)
 
             if r % 111 in (0, 1):
@@ -239,6 +248,7 @@ class SimpleBlock(EBMLElement):
                     packet.compression = compression
 
             pktsizes = [pkt.size for pkt in self.packets]
+
         else:
             compression = None
             pktsizes = [len(pkt.data) for pkt in self.packets]
@@ -639,11 +649,19 @@ class BlockGroup(EBMLMasterElement):
     @property
     def parent(self):
         if hasattr(self, "_parent"):
+            if isinstance(self._parent, weakref.ref):
+                return self._parent()
+
             return self._parent
 
     @parent.setter
     def parent(self, value):
-        self._parent = value
+        try:
+            self._parent = weakref.ref(value)
+
+        except TypeError:
+            self._parent = value
+
         self.ancestorChanged()
 
     def ancestorChanged(self):
