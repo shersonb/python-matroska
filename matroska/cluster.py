@@ -1,4 +1,4 @@
-from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList
+from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList, CRC32
 from ebml.util import readVint, fromVint, toVint, parseElements
 from matroska.blocks import SimpleBlock, BlockGroup, Blocks
 import threading
@@ -193,11 +193,14 @@ class Cluster(EBMLMasterElement):
                 offset = 0
 
                 for k in range(8):
-                    child = parent.readElement((Timestamp, SilentTracks, Position, PrevSize), parent=self,
+                    child = parent.readElement((Timestamp, SilentTracks, Position, PrevSize, CRC32), parent=self,
                                                ignore=(BlockGroup.ebmlID, SimpleBlock.ebmlID))
 
                     if child is None:
                         break
+
+                    if isinstance(child, CRC32):
+                        continue
 
                     prop = self.__ebmlpropertiesbyid__[child.ebmlID]
                     prop.__set__(self, child)
