@@ -160,7 +160,7 @@ class EditionFlagOrdered(EBMLInteger):
 class EditionEntry(EBMLMasterElement):
     ebmlID = b"\x45\xb9"
     __ebmlchildren__ = (
-            EBMLProperty("editionUID", EditionUID),
+            EBMLProperty("editionUID", EditionUID, True),
             EBMLProperty("editionFlagHidden", EditionFlagHidden),
             EBMLProperty("editionFlagDefault", EditionFlagDefault),
             EBMLProperty("editionFlagOrdered", EditionFlagOrdered, True),
