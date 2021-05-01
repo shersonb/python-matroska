@@ -124,11 +124,12 @@ class Cluster(EBMLMasterElement):
                 if (self.timestamp + localpts)*timestampScale < start_pts*10**9:
                     continue
 
-                if isinstance(trackNumber, (tuple, list)) and trackNumber_ not in trackNumber:
+                if isinstance(trackNumber, (tuple, list, set)) and trackNumber_ not in trackNumber:
                     continue
 
-                if trackNumber is not None and trackNumber_ != trackNumber:
+                elif isinstance(trackNumber, int) and trackNumber_ != trackNumber:
                     continue
+
 
                 block = SimpleBlock.fromBytes(ebmlID + toVint(len(data)) + data, parent=self)
                 block.offsetInParent = offset
