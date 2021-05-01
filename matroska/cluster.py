@@ -119,7 +119,7 @@ class Cluster(EBMLMasterElement):
 
             if ebmlID == SimpleBlock.ebmlID:
                 (trackNumber_, localpts, keyframe, invisible, discardable, lacing, data_) = SimpleBlock.parsepkt(data)
-                defaultDuration = self.segment.tracks.byTrackNumber[trackNumber].defaultDuration or 0
+                defaultDuration = self.segment.tracks.byTrackNumber[trackNumber_].defaultDuration or 0
 
                 if (self.timestamp + localpts)*timestampScale < start_pts*10**9:
                     continue
