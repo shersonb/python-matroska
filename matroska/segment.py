@@ -368,7 +368,8 @@ class Segment(EBMLBody):
         ptsOverflow = nonemptyCluster and abs(int(packet.pts/timestampScale - \
                                               self._currentCluster.timestamp)) >= 2**15
 
-        newClusterNeeded = nonemptyCluster and (isVideoKeyframe or ptsOverflow or newcluster)
+        newClusterNeeded = (nonemptyCluster and (isVideoKeyframe or ptsOverflow or newcluster)
+                            and packet.pts > self._currentCluster.timestamp*timestampScale)
 
         if self._packetsMuxed == 0:
             self._init_mux()
@@ -380,7 +381,7 @@ class Segment(EBMLBody):
             self._currentCluster = Cluster(timestamp=int(packet.pts/timestampScale),
                                                             blocks=[], parent=self)
 
-        localpts = int(packet.pts/timestampScale - self._currentCluster.timestamp)
+        localpts = int(packet.pts/timestampScale - self._currentCluster.timestamp + 0.01)
 
         if not isDefaultDuration or packet.referenceBlocks:
             """Use BlockGroup/Block"""
