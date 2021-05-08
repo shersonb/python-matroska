@@ -1,6 +1,6 @@
 from ebml.base import EBMLMasterElement, EBMLInteger, EBMLProperty, EBMLList, CRC32
 from ebml.util import readVint, fromVint, toVint, parseElements
-from matroska.blocks import SimpleBlock, BlockGroup, Blocks
+from matroska.blocks import SimpleBlock, BlockGroup, Blocks, Packet
 import threading
 import gc
 from fractions import Fraction as QQ
@@ -85,6 +85,8 @@ class Cluster(EBMLMasterElement):
             element does NOT start at this offset.
         'trackNumber': Filters by trackNumber. Can be either an integer or list/tuple of integers.
         """
+
+        yield Packet(0, data=b"", pts=self.timestamp*self.segment.info.timestampScale)
 
         blocks = self.iterBlocks(start_pts, startPosition=startPosition, trackNumber=trackNumber)
 
